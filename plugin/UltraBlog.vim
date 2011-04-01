@@ -2,7 +2,7 @@
 " File:        UltraBlog.vim
 " Description: Ultimate vim blogging plugin that manages web logs
 " Author:      Lenin Lee <lenin.lee at gmail dot com>
-" Version:     1.0
+" Version:     1.0.1
 " Last Change: 2011-04-01
 " License:     Copyleft.
 "
@@ -191,8 +191,9 @@ def ub_get_api():
 def _ub_get_blog_settings():
     '''Get the blog settings from vimrc and raise exception if none found
     '''
-    if vim.eval('exists("ub_blog")') == 0:
-        raise UBException('No blog has been set !')
+    if vim.eval('exists("ub_blog")') == '0':
+        #raise UBException('No blog has been set !')
+        return None
 
     cfg = vim.eval('ub_blog')
 
@@ -634,17 +635,18 @@ def ub_upload_media(file_path):
 
     vim.current.range.append(result['url'])
 
+@__ub_exception_handler
 def ub_init():
     '''Init database and other variables
     '''
     global Session, Base, db, cfg, api
 
     cfg = _ub_get_blog_settings()
-    api = ub_get_api()
-    db = sqlalchemy.create_engine("sqlite:///%s" % cfg['db'])
-
-    Session.configure(bind=db)
-    Base.metadata.create_all(db)
+    if cfg is not None:
+        api = ub_get_api()
+        db = sqlalchemy.create_engine("sqlite:///%s" % cfg['db'])
+        Session.configure(bind=db)
+        Base.metadata.create_all(db)
 
 if __name__ == "__main__":
     ub_init()
