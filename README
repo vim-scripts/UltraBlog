@@ -1,0 +1,27 @@
+This is a mirror of http://www.vim.org/scripts/script.php?script_id=3532
+
+The biggest difference between UltraBlog and other Vim blogging scripts is that UltraBlog stores and manages posts in a local SQLite database. In this way, it does not only EDIT or SEND posts to blogs but also MANAGE them locally. So UltraBlog is an integrated blogging client more than just a blog editor.
+
+You will find UltraBlog very useful when you write posts in the Markdown syntax. With posts stored locally, you can edit them in MARKDOWN syntax at any time even after a long time when they were published, and update the online copies which are in HTML syntax. 
+
+This is the exact original intention for which I wrote UltraBlog. After years of blogging, I've formed the habbit that writing posts in markdown syntax to save time, and I think it is good to always keep my posts updated, rather than post it and forget it. But I found it hard to update the posted copies after modifying the local markdown source files with other Vim blogging plugins. 
+
+*Commands:*
+
+:UBList [local|remote]
+:UBNew [markdown|html]
+:UBOpen [local|remote] [id]
+:UBSave
+:UBSend [draft|public]
+:UBPageList [local|remote]
+:UBPageNew [markdown|html]
+:UBPageOpen {id} [local|remote]
+:UBPageSave
+:UBPageSend [draft|public]
+:UBUpload {file_path}
+:UBDel {id} [local|remote]
+:UBPreview
+
+Refer to the plugin's page for detail information:
+
+http://sinolog.it/?p=1894
