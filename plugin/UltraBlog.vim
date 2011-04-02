@@ -1,8 +1,8 @@
-" ============================================================================
+ 
 " File:        UltraBlog.vim
 " Description: Ultimate vim blogging plugin that manages web logs
 " Author:      Lenin Lee <lenin.lee at gmail dot com>
-" Version:     1.0.2
+" Version:     1.0.3
 " Last Change: 2011-04-02
 " License:     Copyleft.
 "
@@ -43,6 +43,14 @@ command! -nargs=* -complete=custom,ScopeCmpl UBList exec('py ub_list_posts(<f-ar
 command! -nargs=* -complete=custom,ScopeCmpl UBOpen exec('py ub_open_posts(<f-args>)')
 command! -nargs=* -complete=custom,ScopeCmpl UBDel exec('py ub_del_post(<f-args>)')
 command! -nargs=1 -complete=file UBUpload exec('py ub_upload_media(<f-args>)')
+
+function! UBClearUndo()
+    let old_undolevels = &undolevels
+    set undolevels=-1
+    exe "normal a \<BS>\<Esc>"
+    let &undolevels = old_undolevels
+    unlet old_undolevels
+endfunction
 
 python <<EOF
 # -*- coding: utf-8 -*-
@@ -124,6 +132,7 @@ def _ub_wise_open_view(view_name=None):
     if vim.current.buffer.name is None and vim.eval('&modified')=='0':
         vim.command('setl modifiable')
         del vim.current.buffer[:]
+        vim.command('call UBClearUndo()')
         vim.command('setl nomodified')
     else:
         vim.command(":new")
@@ -150,7 +159,10 @@ def ub_new_post(syntax='markdown'):
 
     _ub_wise_open_view('post_edit')
     _ub_fill_post_meta_data(post_meta_data)
+
     vim.command('setl syntax=%s' % syntax)
+    vim.command('setl wrap')
+    vim.command('call UBClearUndo()')
     vim.command('setl nomodified')
     vim.current.window.cursor = (4, len(vim.current.buffer[3])-1)
 
@@ -337,11 +349,11 @@ def ub_send_post(send_as='draft'):
     post_id = ub_get_meta('post_id')
     if post_id is None:
         post_id = api.metaWeblog.newPost('', cfg['login_name'], cfg['password'], post, publish)
+        status = "Post sent as %s !" % send_as
         meta_dict = _ub_get_post_meta_data()
         meta_dict['post_id'] = post_id
         _ub_fill_post_meta_data(meta_dict)
         ub_save_post()
-        status = "Post sent as %s !" % send_as
     else:
         api.metaWeblog.editPost(post_id, cfg['login_name'], cfg['password'], post, publish)
         status = "Post sent as %s !" % send_as
@@ -409,15 +421,16 @@ def ub_list_local_posts(page_no=1, page_size=10):
     vim.current.buffer[0] = "==================== Posts (Page %d) ====================" % page_no
     vim.current.buffer.append([("%d\t%s\t%s" % (post.id,post.post_id,post.title)).encode(enc) for post in posts])
 
+    vim.command("let b:page_no=%d" % page_no)
+    vim.command("let b:page_size=%d" % page_size)
+    vim.command('map <buffer> <enter> :py _ub_list_open_local_post()<cr>')
+    vim.command("map <buffer> <del> :py _ub_list_del_post('local')<cr>")
+    vim.command("map <buffer> <c-pagedown> :py ub_list_local_posts(%d,%d)<cr>" % (page_no+1,page_size))
+    vim.command("map <buffer> <c-pageup> :py ub_list_local_posts(%d,%d)<cr>" % (page_no-1,page_size))
+    vim.command('call UBClearUndo()')
     vim.command('setl nomodified')
     vim.command("setl nomodifiable")
     vim.current.window.cursor = (2, 0)
-    vim.command('map <buffer> <enter> :py _ub_list_open_local_post()<cr>')
-    vim.command("map <buffer> <del> :py _ub_list_del_post('local')<cr>")
-    vim.command("let b:page_no=%d" % page_no)
-    vim.command("let b:page_size=%d" % page_size)
-    vim.command("map <buffer> <c-pagedown> :py ub_list_local_posts(%d,%d)<cr>" % (page_no+1,page_size))
-    vim.command("map <buffer> <c-pageup> :py ub_list_local_posts(%d,%d)<cr>" % (page_no-1,page_size))
 
 @__ub_exception_handler
 def ub_list_remote_posts(num=10):
@@ -426,21 +439,30 @@ def ub_list_remote_posts(num=10):
     if num<1:
         return
 
-    global cfg, api
+    global cfg, api, Session, Post
 
     posts = api.metaWeblog.getRecentPosts('', cfg['login_name'], cfg['password'], num)
+    sess = Session()
+    for post in posts:
+        local_post = sess.query(Post).filter(Post.post_id==post['postid']).first()
+        if local_post is None:
+            post['id'] = 0
+        else:
+            post['id'] = local_post.id
+    sess.close()
 
     _ub_wise_open_view('remote_post_list')
     enc = vim.eval('&encoding')
     vim.current.buffer[0] = "==================== Recent Posts ===================="
-    vim.current.buffer.append([("%(postid)s\t%(title)s" % post).encode(enc) for post in posts])
+    vim.current.buffer.append([("%(id)s\t%(postid)s\t%(post_status)s\t%(title)s" % post).encode(enc) for post in posts])
 
-    vim.command('setl nomodified')
-    vim.command("setl nomodifiable")
     vim.command("let b:page_size=%d" % num)
-    vim.current.window.cursor = (2, 0)
     vim.command('map <buffer> <enter> :py _ub_list_open_remote_post()<cr>')
     vim.command("map <buffer> <del> :py _ub_list_del_post('remote')<cr>")
+    vim.command('call UBClearUndo()')
+    vim.command('setl nomodified')
+    vim.command("setl nomodifiable")
+    vim.current.window.cursor = (2, 0)
 
 def _ub_list_open_local_post():
     '''Open local post, invoked in posts list
@@ -458,7 +480,7 @@ def _ub_list_open_remote_post():
     if not ub_is_view('remote_post_list'):
         raise UBException('Invalid view !')
 
-    id = vim.current.line.split()[0]
+    id = vim.current.line.split()[1]
     if id.isdigit():
         ub_open_remote_post(int(id))
 
@@ -488,9 +510,11 @@ def ub_open_local_post(id):
     _ub_wise_open_view('post_edit')
     _ub_fill_post_meta_data(post_meta_data)
     vim.current.buffer.append(post.content.encode(enc).split("\n"))
+
     vim.command('setl syntax=%s' % post.syntax)
-    vim.command('setl nomodified')
     vim.command('setl wrap')
+    vim.command('call UBClearUndo()')
+    vim.command('setl nomodified')
     vim.current.window.cursor = (len(post_meta_data)+3, 0)
 
 @__ub_exception_handler
@@ -527,9 +551,11 @@ def ub_open_remote_post(id):
     _ub_wise_open_view('post_edit')
     _ub_fill_post_meta_data(post_meta_data)
     vim.current.buffer.append(post.content.encode(enc).split("\n"))
+
     vim.command('setl syntax=%s' % post.syntax)
-    vim.command('setl nomodified')
     vim.command('setl wrap')
+    vim.command('call UBClearUndo()')
+    vim.command('setl nomodified')
     vim.current.window.cursor = (len(post_meta_data)+3, 0)
 
 def ub_is_view(view_name):
@@ -559,15 +585,11 @@ def _ub_list_del_post(scope='local'):
         raise UBException('Invalid view !')
 
     info = vim.current.line.split()
-    if len(info)>=2:
-        id = info[0]
-        post_id = info[1]
-        if scope=='local' and id.isdigit():
-            ub_del_post(int(id),'local')
-        if scope=='local' and post_id.isdigit() and int(post_id)>0:
-            ub_del_post(int(post_id),'remote')
-        if scope=='remote' and id.isdigit():
-            ub_del_post(int(id),'remote')
+    if len(info)>=3:
+        if info[0].isdigit() and int(info[0])>0:
+            ub_del_post(int(info[0]),'local')
+        if info[1].isdigit() and int(info[1])>0:
+            ub_del_post(int(info[1]),'remote')
 
 @__ub_exception_handler
 def ub_del_post(id, scope='local'):
