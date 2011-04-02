@@ -2,8 +2,8 @@
 " File:        UltraBlog.vim
 " Description: Ultimate vim blogging plugin that manages web logs
 " Author:      Lenin Lee <lenin.lee at gmail dot com>
-" Version:     1.0.1
-" Last Change: 2011-04-01
+" Version:     1.0.2
+" Last Change: 2011-04-02
 " License:     Copyleft.
 "
 " ============================================================================
@@ -11,6 +11,7 @@
 " TODO: Write a syntax file for this script
 " TODO: Add a function and an option to enable users to add promote links for this script
 " TODO: Optimize post list, the columns should be tidy
+" TODO: Display draft|public status in post list.
 
 "let ub_blog = {'login_name':'admin',
 "            \'password':'pass2011',
@@ -339,6 +340,7 @@ def ub_send_post(send_as='draft'):
         meta_dict = _ub_get_post_meta_data()
         meta_dict['post_id'] = post_id
         _ub_fill_post_meta_data(meta_dict)
+        ub_save_post()
         status = "Post sent as %s !" % send_as
     else:
         api.metaWeblog.editPost(post_id, cfg['login_name'], cfg['password'], post, publish)
@@ -562,7 +564,7 @@ def _ub_list_del_post(scope='local'):
         post_id = info[1]
         if scope=='local' and id.isdigit():
             ub_del_post(int(id),'local')
-        if scope=='local' and post_id.isdigit():
+        if scope=='local' and post_id.isdigit() and int(post_id)>0:
             ub_del_post(int(post_id),'remote')
         if scope=='remote' and id.isdigit():
             ub_del_post(int(id),'remote')
