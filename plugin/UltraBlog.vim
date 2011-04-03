@@ -2,7 +2,7 @@
 " File:        UltraBlog.vim
 " Description: Ultimate vim blogging plugin that manages web logs
 " Author:      Lenin Lee <lenin.lee at gmail dot com>
-" Version:     1.0.3
+" Version:     1.0.4
 " Last Change: 2011-04-02
 " License:     Copyleft.
 "
@@ -12,6 +12,8 @@
 " TODO: Add a function and an option to enable users to add promote links for this script
 " TODO: Optimize post list, the columns should be tidy
 " TODO: Display draft|public status in post list.
+" TODO: Add an option to set a number of posts in one page in local post list.
+" TODO: Add an option to set how many recent posts should be displayed in remote post list.
 
 "let ub_blog = {'login_name':'admin',
 "            \'password':'pass2011',
@@ -421,8 +423,8 @@ def ub_list_local_posts(page_no=1, page_size=10):
     vim.current.buffer[0] = "==================== Posts (Page %d) ====================" % page_no
     vim.current.buffer.append([("%d\t%s\t%s" % (post.id,post.post_id,post.title)).encode(enc) for post in posts])
 
-    vim.command("let b:page_no=%d" % page_no)
-    vim.command("let b:page_size=%d" % page_size)
+    vim.command("let b:page_no=%s" % page_no)
+    vim.command("let b:page_size=%s" % page_size)
     vim.command('map <buffer> <enter> :py _ub_list_open_local_post()<cr>')
     vim.command("map <buffer> <del> :py _ub_list_del_post('local')<cr>")
     vim.command("map <buffer> <c-pagedown> :py ub_list_local_posts(%d,%d)<cr>" % (page_no+1,page_size))
@@ -456,7 +458,7 @@ def ub_list_remote_posts(num=10):
     vim.current.buffer[0] = "==================== Recent Posts ===================="
     vim.current.buffer.append([("%(id)s\t%(postid)s\t%(post_status)s\t%(title)s" % post).encode(enc) for post in posts])
 
-    vim.command("let b:page_size=%d" % num)
+    vim.command("let b:page_size=%s" % num)
     vim.command('map <buffer> <enter> :py _ub_list_open_remote_post()<cr>')
     vim.command("map <buffer> <del> :py _ub_list_del_post('remote')<cr>")
     vim.command('call UBClearUndo()')
