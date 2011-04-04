@@ -2,8 +2,8 @@
 " File:        UltraBlog.vim
 " Description: Ultimate vim blogging plugin that manages web logs
 " Author:      Lenin Lee <lenin.lee at gmail dot com>
-" Version:     1.0.4
-" Last Change: 2011-04-02
+" Version:     1.0.5
+" Last Change: 2011-04-04
 " License:     Copyleft.
 "
 " ============================================================================
@@ -12,14 +12,6 @@
 " TODO: Add a function and an option to enable users to add promote links for this script
 " TODO: Optimize post list, the columns should be tidy
 " TODO: Display draft|public status in post list.
-" TODO: Add an option to set a number of posts in one page in local post list.
-" TODO: Add an option to set how many recent posts should be displayed in remote post list.
-
-"let ub_blog = {'login_name':'admin',
-"            \'password':'pass2011',
-"            \'xmlrpc':'http://www.sample.com/xmlrpc.php',
-"            \'db':'$VIM/UltraBlog.db'
-"            \}
 
 if !has("python")
     finish
@@ -79,6 +71,16 @@ except Exception:
 
 Base = declarative_base()
 Session = sessionmaker()
+default_local_pagesize = 30
+default_remote_pagesize = 10
+if vim.eval('exists("ub_local_pagesize")') == '1':
+    tmp = vim.eval('ub_local_pagesize')
+    if tmp.isdigit() and int(tmp)>0:
+        default_local_pagesize = int(tmp)
+if vim.eval('exists("ub_remote_pagesize")') == '1':
+    tmp = vim.eval('ub_remote_pagesize')
+    if tmp.isdigit() and int(tmp)>0:
+        default_remote_pagesize = int(tmp)
 
 class Post(Base):
     __tablename__ = 'post'
@@ -388,7 +390,25 @@ def _ub_get_html(body_only=True):
     return html
 
 @__ub_exception_handler
-def ub_list_local_posts(page_no=1, page_size=10):
+def ub_list_posts(scope='local', page_size=None, page_no=1):
+    '''List posts by scope
+    '''
+    if page_size is not None:
+        page_size = int(page_size)
+    if page_no is not None:
+        page_no = int(page_no)
+
+    if ub_check_scope(scope):
+        if page_size is None:
+            page_size = default_local_pagesize
+        ub_list_local_posts(page_no, page_size)
+    else:
+        if page_size is None:
+            page_size = default_remote_pagesize
+        ub_list_remote_posts(page_size)
+
+@__ub_exception_handler
+def ub_list_local_posts(page_no=1, page_size=default_local_pagesize):
     '''List local posts stored in database
     '''
     if page_no<1 or page_size<1:
@@ -435,7 +455,7 @@ def ub_list_local_posts(page_no=1, page_size=10):
     vim.current.window.cursor = (2, 0)
 
 @__ub_exception_handler
-def ub_list_remote_posts(num=10):
+def ub_list_remote_posts(num=default_remote_pagesize):
     '''List remote posts stored in the blog
     '''
     if num<1:
@@ -624,15 +644,6 @@ def ub_del_post(id, scope='local'):
                 vim.command('bd!')
 
 @__ub_exception_handler
-def ub_list_posts(scope='local', page_size=10, page_no=1):
-    '''List posts by scope
-    '''
-    if ub_check_scope(scope):
-        ub_list_local_posts(int(page_no), int(page_size))
-    else:
-        ub_list_remote_posts(page_size)
-
-@__ub_exception_handler
 def ub_open_posts(id, scope='local'):
     '''Open posts by scope
     '''
@@ -666,9 +677,12 @@ def ub_init():
     '''Init database and other variables
     '''
     global Session, Base, db, cfg, api
+    global default_local_pagesize, default_remote_pagesize
 
+    # Get blog settings
     cfg = _ub_get_blog_settings()
     if cfg is not None:
+        # Initialize database
         api = ub_get_api()
         db = sqlalchemy.create_engine("sqlite:///%s" % cfg['db'])
         Session.configure(bind=db)
