@@ -6,7 +6,7 @@
 Author:      Lenin Lee   lenin.lee at gmail dot com       *UltraBlog_Author*
 URL:         http://sinolog.it/?p=1894                    *UltraBlog_URL*
 Description: Ultimate vim blogging plugin.                |UltraBlog_Motivation|
-Version:     1.1                                          |UltraBlog_History|
+Version:     1.2                                          |UltraBlog_History|
 License:     Copyleft                                     |UltraBlog_License|
 Contribute:  Please report any bugs or suggestions        |UltraBlog_Bugs|
              to the address above.                        |UltraBlog_Future|
@@ -193,6 +193,15 @@ ub_append_promotion_link                             *ub_append_promotion_link*
     Proudly show your visitors that you are blogging with the world's most 
     powerful editor.
 
+------------------------------------------------------------------------------
+
+ub_list_col1_width                                         *ub_list_col1_width*
+ub_list_col2_width                                         *ub_list_col2_width*
+
+    Column widths of post or page lists.
+    col1 for the local id column, whose default value is 10.
+    col2 for the remote id column, whose default value is 10.
+
 ==============================================================================
   Future                                                     *UltraBlog_Future*
 ==============================================================================
@@ -208,6 +217,11 @@ If you discover any bugs not listed here, please contact the |UltraBlog_Author|
 ==============================================================================
   History                                                   *UltraBlog_History*
 ==============================================================================
+
+1.2
+    * Feature: Column widths can be set to custom values, which keep post or 
+               page lists tidy. Two options added: |ub_list_col1_width| and 
+               |ub_list_col2_width|.
 
 1.1
     * Feature: Page management.

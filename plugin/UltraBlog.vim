@@ -2,13 +2,12 @@
 " File:        UltraBlog.vim
 " Description: Ultimate vim blogging plugin that manages web logs
 " Author:      Lenin Lee <lenin.lee at gmail dot com>
-" Version:     1.1
-" Last Change: 2011-04-05
+" Version:     1.2
+" Last Change: 2011-04-07
 " License:     Copyleft.
 "
 " ============================================================================
 " TODO: Write a syntax file for this script
-" TODO: Optimize post list, the columns should be tidy
 " TODO: Display draft|public status in post list.
 " TODO: Context search functionality.
 
@@ -623,7 +622,8 @@ def ub_list_local_posts(page_no=1, page_size=default_local_pagesize):
     _ub_wise_open_view('local_post_list')
     enc = vim.eval('&encoding')
     vim.current.buffer[0] = "==================== Posts (Page %d) ====================" % page_no
-    vim.current.buffer.append([("%d\t%s\t%s" % (post.id,post.post_id,post.title)).encode(enc) for post in posts])
+    tmpl = ub_get_list_template()
+    vim.current.buffer.append([(tmpl % (post.id,post.post_id,post.title)).encode(enc) for post in posts])
 
     vim.command("let b:page_no=%s" % page_no)
     vim.command("let b:page_size=%s" % page_size)
@@ -668,7 +668,8 @@ def ub_list_local_pages():
     _ub_wise_open_view('local_page_list')
     enc = vim.eval('&encoding')
     vim.current.buffer[0] = "==================== Local Pages ===================="
-    vim.current.buffer.append([("%d\t%s\t%s" % (page.id,page.post_id,page.title)).encode(enc) for page in pages])
+    tmpl = ub_get_list_template()
+    vim.current.buffer.append([(tmpl % (page.id,page.post_id,page.title)).encode(enc) for page in pages])
 
     vim.command('map <buffer> <enter> :py _ub_list_open_local_post()<cr>')
     vim.command("map <buffer> <del> :py _ub_list_del_post('local')<cr>")
@@ -699,7 +700,8 @@ def ub_list_remote_posts(num=default_remote_pagesize):
     _ub_wise_open_view('remote_post_list')
     enc = vim.eval('&encoding')
     vim.current.buffer[0] = "==================== Recent Posts ===================="
-    vim.current.buffer.append([("%(id)s\t%(postid)s\t%(post_status)s\t%(title)s" % post).encode(enc) for post in posts])
+    tmpl = ub_get_list_template()
+    vim.current.buffer.append([(tmpl % (post['id'],post['postid'],post['title'])).encode(enc) for post in posts])
 
     vim.command("let b:page_size=%s" % num)
     vim.command('map <buffer> <enter> :py _ub_list_open_remote_post()<cr>')
@@ -728,7 +730,8 @@ def ub_list_remote_pages():
     _ub_wise_open_view('remote_page_list')
     enc = vim.eval('&encoding')
     vim.current.buffer[0] = "==================== Blog Pages ===================="
-    vim.current.buffer.append([("%(id)s\t%(page_id)s\t%(page_status)s\t%(title)s" % page).encode(enc) for page in pages])
+    tmpl = ub_get_list_template()
+    vim.current.buffer.append([(tmpl % (page['id'],page['page_id'],page['title'])).encode(enc) for page in pages])
 
     vim.command('map <buffer> <enter> :py _ub_list_open_remote_post()<cr>')
     vim.command("map <buffer> <del> :py _ub_list_del_post('remote')<cr>")
@@ -1022,6 +1025,25 @@ def ub_check_scope(scope):
         return False
     else:
         raise UBException('Invalid scope !')
+
+def ub_get_list_template():
+    '''Return a template string for post or page list
+    '''
+    col1_width = 10
+    tmp = ub_get_option('ub_list_col1_width')
+    if tmp is not None and tmp.isdigit() and int(tmp)>0:
+        col1_width = int(tmp)
+
+    col2_width = 10
+    tmp = ub_get_option('ub_list_col2_width')
+    if tmp is not None and tmp.isdigit() and int(tmp)>0:
+        col2_width = int(tmp)
+
+    tmpl = "%%-%ds%%-%ds%%s"
+
+    tmpl = tmpl % (col1_width,col2_width)
+
+    return tmpl
 
 @__ub_exception_handler
 def ub_init():
