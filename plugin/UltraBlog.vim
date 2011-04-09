@@ -2,13 +2,12 @@
 " File:        UltraBlog.vim
 " Description: Ultimate vim blogging plugin that manages web logs
 " Author:      Lenin Lee <lenin.lee at gmail dot com>
-" Version:     1.2
-" Last Change: 2011-04-07
+" Version:     1.3
+" Last Change: 2011-04-09
 " License:     Copyleft.
 "
 " ============================================================================
 " TODO: Write a syntax file for this script
-" TODO: Display draft|public status in post list.
 " TODO: Context search functionality.
 
 if !has("python")
@@ -20,7 +19,7 @@ function! SyntaxCmpl(ArgLead, CmdLine, CursorPos)
 endfunction
 
 function! StatusCmpl(ArgLead, CmdLine, CursorPos)
-  return "draft\npublic\n"
+  return "draft\npublish\nprivate\npending\n"
 endfunction
 
 function! ScopeCmpl(ArgLead, CmdLine, CursorPos)
@@ -69,8 +68,26 @@ try:
     from sqlalchemy.orm import sessionmaker
     from sqlalchemy.sql import union_all,select,case
     from sqlalchemy.exceptions import OperationalError
+
+    Base = declarative_base()
+    Session = sessionmaker()
+
+    class Post(Base):
+        __tablename__ = 'post'
+
+        id = Column('id', Integer, primary_key=True)
+        post_id = Column('post_id', Integer)
+        title = Column('title', String(256))
+        categories = Column('categories', Text)
+        tags = Column('tags', Text)
+        content = Column('content', Text)
+        slug = Column('slug', Text)
+        syntax = Column('syntax', String(64), nullable=False, default='markdown')
+        type = Column('type', String(32), nullable=False, default='post')
+        status = Column('status', String(32), nullable=False, default='draft')
 except ImportError, e:
     sqlalchemy = None
+    db = None
 except Exception:
     pass
 
@@ -85,22 +102,6 @@ if vim.eval('exists("ub_remote_pagesize")') == '1':
     tmp = vim.eval('ub_remote_pagesize')
     if tmp.isdigit() and int(tmp)>0:
         default_remote_pagesize = int(tmp)
-
-Base = declarative_base()
-Session = sessionmaker()
-
-class Post(Base):
-    __tablename__ = 'post'
-
-    id = Column('id', Integer, primary_key=True)
-    post_id = Column('post_id', Integer)
-    title = Column('title', String(256))
-    categories = Column('categories', Text)
-    tags = Column('tags', Text)
-    content = Column('content', Text)
-    slug = Column('slug', Text)
-    syntax = Column('syntax', String(64), nullable=False, default='markdown')
-    type = Column('type', String(32), nullable=False, default='post')
 
 class UBException(Exception):
     pass
@@ -167,7 +168,8 @@ def ub_new_post(syntax='markdown'):
             title = '',
             categories = ub_get_categories(),
             tags = '',
-            slug = '')
+            slug = '',
+            status = 'draft')
 
     _ub_wise_open_view('post_edit')
     _ub_fill_post_meta_data(post_meta_data)
@@ -206,7 +208,8 @@ def ub_new_page(syntax='markdown'):
             id = str(0),
             page_id = str(0),
             title = '',
-            slug = '')
+            slug = '',
+            status = 'draft')
 
     _ub_wise_open_view('page_edit')
     _ub_fill_page_meta_data(page_meta_data)
@@ -228,6 +231,7 @@ $title:           %(title)s
 $categories:      %(categories)s
 $tags:            %(tags)s
 $slug:            %(slug)s
+$status:          %(status)s
 -->""" % meta_dict
     
     meta_lines = meta_text.split('\n')
@@ -247,6 +251,7 @@ $id:              %(id)s
 $page_id:         %(page_id)s
 $title:           %(title)s
 $slug:            %(slug)s
+$status:          %(status)s
 -->""" % meta_dict
     
     meta_lines = meta_text.split('\n')
@@ -292,6 +297,9 @@ def _ub_get_blog_settings():
 def ub_save_post():
     '''Save the current buffer to local database
     '''
+    # Check prerequesites
+    ub_check_prerequesites()
+
     # This function is valid only in 'post_edit' buffers
     if not ub_is_view('post_edit'):
         raise UBException('Invalid view !')
@@ -300,16 +308,12 @@ def ub_save_post():
     if vim.eval('&modified')=='0':
         return
 
-    global sqlalchemy
-    if sqlalchemy is None:
-        raise UBException('No module named sqlalchemy !')
-
     sess = Session()
     enc = vim.eval('&encoding')
     syntax = vim.eval('&syntax')
 
-    id = _ub_get_meta('id')
-    post_id = _ub_get_meta('post_id')
+    id = ub_get_meta('id')
+    post_id = ub_get_meta('post_id')
     if id is None:
         post = Post()
     else:
@@ -318,10 +322,11 @@ def ub_save_post():
     meta_dict = _ub_get_post_meta_data()
     post.content = "\n".join(vim.current.buffer[len(meta_dict)+2:]).decode(enc)
     post.post_id = post_id
-    post.title = _ub_get_meta('title').decode(enc)
-    post.categories = _ub_get_meta('categories').decode(enc)
-    post.tags = _ub_get_meta('tags').decode(enc)
-    post.slug = _ub_get_meta('slug').decode(enc)
+    post.title = ub_get_meta('title').decode(enc)
+    post.categories = ub_get_meta('categories').decode(enc)
+    post.tags = ub_get_meta('tags').decode(enc)
+    post.slug = ub_get_meta('slug').decode(enc)
+    post.status = ub_get_meta('status').decode(enc)
     post.syntax = syntax
     sess.add(post)
     sess.commit()
@@ -337,6 +342,9 @@ def ub_save_post():
 def ub_save_page():
     '''Save the current page to local database
     '''
+    # Check prerequesites
+    ub_check_prerequesites()
+
     # This function is valid only in 'page_edit' buffers
     if not ub_is_view('page_edit'):
         raise UBException('Invalid view !')
@@ -345,16 +353,12 @@ def ub_save_page():
     if vim.eval('&modified')=='0':
         return
 
-    global sqlalchemy
-    if sqlalchemy is None:
-        raise UBException('No module named sqlalchemy !')
-
     sess = Session()
     enc = vim.eval('&encoding')
     syntax = vim.eval('&syntax')
 
-    id = _ub_get_meta('id')
-    page_id = _ub_get_meta('page_id')
+    id = ub_get_meta('id')
+    page_id = ub_get_meta('page_id')
     if id is None:
         page = Post()
         page.type = 'page'
@@ -364,8 +368,9 @@ def ub_save_page():
     meta_dict = _ub_get_page_meta_data()
     page.content = "\n".join(vim.current.buffer[len(meta_dict)+2:]).decode(enc)
     page.post_id = page_id
-    page.title = _ub_get_meta('title').decode(enc)
-    page.slug = _ub_get_meta('slug').decode(enc)
+    page.title = ub_get_meta('title').decode(enc)
+    page.slug = ub_get_meta('slug').decode(enc)
+    page.status = ub_get_meta('status').decode(enc)
     page.syntax = syntax
     sess.add(page)
     sess.commit()
@@ -377,7 +382,7 @@ def ub_save_page():
     vim.command('setl nomodified')
     sess.close()
 
-def _ub_get_meta(item):
+def ub_get_meta(item):
     '''Get value of the given item from meta data in the current buffer
     '''
     def __get_value(item, line):
@@ -401,40 +406,55 @@ def _ub_get_meta(item):
             return __get_value(item, line)
     return None
 
+def ub_set_meta(item, value):
+    '''Set value of the given item from meta data in the current buffer
+    '''
+    regex_meta_end = re.compile('^\s*-->')
+    regex_item = re.compile('^\$'+item+':\s*')
+    for i in range(0,len(vim.current.buffer)):
+        if regex_meta_end.match(vim.current.buffer[i]):
+            break
+        if regex_item.match(vim.current.buffer[i]):
+            vim.current.buffer[i] = "$%-17s%s" % (item+':',value)
+            return True
+    return False
+
 def _ub_get_post_meta_data():
     '''Get all meta data of the post and return a dict
     '''
-    id = _ub_get_meta('id')
+    id = ub_get_meta('id')
     if id is None:
         id = 0
-    post_id = _ub_get_meta('post_id')
+    post_id = ub_get_meta('post_id')
     if post_id is None:
         post_id = 0
 
     return dict(\
         id = id,
         post_id = post_id,
-        title = _ub_get_meta('title'),
-        categories = _ub_get_meta('categories'),
-        tags = _ub_get_meta('tags'),
-        slug = _ub_get_meta('slug')
+        title = ub_get_meta('title'),
+        categories = ub_get_meta('categories'),
+        tags = ub_get_meta('tags'),
+        slug = ub_get_meta('slug'),
+        status = ub_get_meta('status')
     )
 
 def _ub_get_page_meta_data():
     '''Get all meta data of the page and return a dict
     '''
-    id = _ub_get_meta('id')
+    id = ub_get_meta('id')
     if id is None:
         id = 0
-    page_id = _ub_get_meta('page_id')
+    page_id = ub_get_meta('page_id')
     if page_id is None:
         page_id = 0
 
     return dict(\
         id = id,
         page_id = page_id,
-        title = _ub_get_meta('title'),
-        slug = _ub_get_meta('slug')
+        title = ub_get_meta('title'),
+        slug = ub_get_meta('slug'),
+        status = ub_get_meta('status')
     )
 
 @__ub_exception_handler
@@ -453,80 +473,84 @@ def ub_preview():
     webbrowser.open("file://%s" % tmpfile)
 
 @__ub_exception_handler
-def ub_send_post(send_as='draft'):
+def ub_send_post(status=None):
     '''Send the current buffer to the blog
     '''
-    # Check parameter
-    if send_as == 'draft':
-        publish = False
-    elif send_as == 'public':
-        publish = True
-    else:
-        raise UBException('Valid parameters: draft|public !')
+    # Check prerequesites
+    ub_check_prerequesites()
 
-    # Save it first
-    ub_save_post()
+    # This function is valid only in 'post_edit' buffers
+    if not ub_is_view('post_edit'):
+        raise UBException('Invalid view !')
+
+    # Check parameter
+    if status is None:
+        status = ub_get_meta('status')
+    publish = ub_check_status(status)
 
     global cfg, api
 
     post = dict(\
-        title = _ub_get_meta('title'),
+        title = ub_get_meta('title'),
         description = _ub_get_html(),
-        categories = [cat.strip() for cat in _ub_get_meta('categories').split(',')],
-        mt_keywords = _ub_get_meta('tags'),
-        wp_slug = _ub_get_meta('slug')
+        categories = [cat.strip() for cat in ub_get_meta('categories').split(',')],
+        mt_keywords = ub_get_meta('tags'),
+        wp_slug = ub_get_meta('slug'),
+        post_type = 'post',
+        post_status = status
     )
 
-    post_id = _ub_get_meta('post_id')
+    post_id = ub_get_meta('post_id')
     if post_id is None:
         post_id = api.metaWeblog.newPost('', cfg['login_name'], cfg['password'], post, publish)
-        status = "Post sent as %s !" % send_as
-        meta_dict = _ub_get_post_meta_data()
-        meta_dict['post_id'] = post_id
-        _ub_fill_post_meta_data(meta_dict)
-        ub_save_post()
+        msg = "Post sent as %s !" % status
     else:
         api.metaWeblog.editPost(post_id, cfg['login_name'], cfg['password'], post, publish)
-        status = "Post sent as %s !" % send_as
+        msg = "Post sent as %s !" % status
 
-    sys.stdout.write(status)
+    ub_set_meta('post_id', post_id)
+    ub_set_meta('status', status)
+    ub_save_post()
+    sys.stdout.write(msg)
 
 @__ub_exception_handler
-def ub_send_page(send_as='draft'):
+def ub_send_page(status=None):
     '''Send the current page to the blog
     '''
-    # Check parameter
-    if send_as == 'draft':
-        publish = False
-    elif send_as == 'public':
-        publish = True
-    else:
-        raise UBException('Valid parameters: draft|public !')
+    # Check prerequesites
+    ub_check_prerequesites()
 
-    # Save it first
-    ub_save_page()
+    # This function is valid only in 'page_edit' buffers
+    if not ub_is_view('page_edit'):
+        raise UBException('Invalid view !')
+
+    # Check parameter
+    if status is None:
+        status = ub_get_meta('status')
+    publish = ub_check_status(status)
 
     global cfg, api
 
     page = dict(\
-        title = _ub_get_meta('title'),
+        title = ub_get_meta('title'),
         description = _ub_get_html(),
-        wp_slug = _ub_get_meta('slug')
+        wp_slug = ub_get_meta('slug'),
+        post_type = 'page',
+        page_status = status
     )
 
-    page_id = _ub_get_meta('page_id')
+    page_id = ub_get_meta('page_id')
     if page_id is None:
-        page_id = api.wp.newPage('', cfg['login_name'], cfg['password'], page, publish)
-        status = "Page sent as %s !" % send_as
-        meta_dict = _ub_get_page_meta_data()
-        meta_dict['page_id'] = page_id
-        _ub_fill_page_meta_data(meta_dict)
-        ub_save_page()
+        page_id = api.metaWeblog.newPost('', cfg['login_name'], cfg['password'], page, publish)
+        msg = "Page sent as %s !" % status
     else:
-        api.wp.editPage('', page_id, cfg['login_name'], cfg['password'], page, publish)
-        status = "Page sent as %s !" % send_as
+        api.metaWeblog.editPost(page_id, cfg['login_name'], cfg['password'], page, publish)
+        msg = "Page sent as %s !" % status
 
-    sys.stdout.write(status)
+    ub_set_meta('page_id', page_id)
+    ub_set_meta('status', status)
+    ub_save_page()
+    sys.stdout.write(msg)
 
 def _ub_get_html(body_only=True):
     '''Generate HTML string from the current buffer
@@ -590,6 +614,9 @@ def ub_list_pages(scope='local'):
 def ub_list_local_posts(page_no=1, page_size=default_local_pagesize):
     '''List local posts stored in database
     '''
+    # Check prerequesites
+    ub_check_prerequesites()
+
     if page_no<1 or page_size<1:
         return
 
@@ -598,9 +625,9 @@ def ub_list_local_posts(page_no=1, page_size=default_local_pagesize):
 
     tbl = Post.__table__
     ua = union_all(
-        select([select([tbl.c.id,case([(tbl.c.post_id>0, tbl.c.post_id)], else_=0).label('post_id'),tbl.c.title])\
+        select([select([tbl.c.id,case([(tbl.c.post_id>0, tbl.c.post_id)], else_=0).label('post_id'),tbl.c.status,tbl.c.title])\
             .where(tbl.c.post_id==None).where(tbl.c.type=='post').order_by(tbl.c.id.desc())]),
-        select([select([tbl.c.id,case([(tbl.c.post_id>0, tbl.c.post_id)], else_=0).label('post_id'),tbl.c.title])\
+        select([select([tbl.c.id,case([(tbl.c.post_id>0, tbl.c.post_id)], else_=0).label('post_id'),tbl.c.status,tbl.c.title])\
             .where(tbl.c.post_id!=None).where(tbl.c.type=='post').order_by(tbl.c.post_id.desc())])
     )
     stmt = select([ua]).limit(page_size).offset(page_size*(page_no-1))
@@ -623,7 +650,7 @@ def ub_list_local_posts(page_no=1, page_size=default_local_pagesize):
     enc = vim.eval('&encoding')
     vim.current.buffer[0] = "==================== Posts (Page %d) ====================" % page_no
     tmpl = ub_get_list_template()
-    vim.current.buffer.append([(tmpl % (post.id,post.post_id,post.title)).encode(enc) for post in posts])
+    vim.current.buffer.append([(tmpl % (post.id,post.post_id,post.status,post.title)).encode(enc) for post in posts])
 
     vim.command("let b:page_no=%s" % page_no)
     vim.command("let b:page_size=%s" % page_size)
@@ -640,14 +667,17 @@ def ub_list_local_posts(page_no=1, page_size=default_local_pagesize):
 def ub_list_local_pages():
     '''List local pages stored in database
     '''
+    # Check prerequesites
+    ub_check_prerequesites()
+
     global db
     pages = []
 
     tbl = Post.__table__
     ua = union_all(
-        select([select([tbl.c.id,case([(tbl.c.post_id>0, tbl.c.post_id)], else_=0).label('post_id'),tbl.c.title])\
+        select([select([tbl.c.id,case([(tbl.c.post_id>0, tbl.c.post_id)], else_=0).label('post_id'),tbl.c.status,tbl.c.title])\
             .where(tbl.c.post_id==None).where(tbl.c.type=='page').order_by(tbl.c.id.desc())]),
-        select([select([tbl.c.id,case([(tbl.c.post_id>0, tbl.c.post_id)], else_=0).label('post_id'),tbl.c.title])\
+        select([select([tbl.c.id,case([(tbl.c.post_id>0, tbl.c.post_id)], else_=0).label('post_id'),tbl.c.status,tbl.c.title])\
             .where(tbl.c.post_id!=None).where(tbl.c.type=='page').order_by(tbl.c.post_id.desc())])
     )
 
@@ -669,7 +699,7 @@ def ub_list_local_pages():
     enc = vim.eval('&encoding')
     vim.current.buffer[0] = "==================== Local Pages ===================="
     tmpl = ub_get_list_template()
-    vim.current.buffer.append([(tmpl % (page.id,page.post_id,page.title)).encode(enc) for page in pages])
+    vim.current.buffer.append([(tmpl % (page.id,page.post_id,page.status,page.title)).encode(enc) for page in pages])
 
     vim.command('map <buffer> <enter> :py _ub_list_open_local_post()<cr>')
     vim.command("map <buffer> <del> :py _ub_list_del_post('local')<cr>")
@@ -682,6 +712,9 @@ def ub_list_local_pages():
 def ub_list_remote_posts(num=default_remote_pagesize):
     '''List remote posts stored in the blog
     '''
+    # Check prerequesites
+    ub_check_prerequesites()
+
     if num<1:
         return
 
@@ -695,13 +728,14 @@ def ub_list_remote_posts(num=default_remote_pagesize):
             post['id'] = 0
         else:
             post['id'] = local_post.id
+            post['post_status'] = local_post.status
     sess.close()
 
     _ub_wise_open_view('remote_post_list')
     enc = vim.eval('&encoding')
     vim.current.buffer[0] = "==================== Recent Posts ===================="
     tmpl = ub_get_list_template()
-    vim.current.buffer.append([(tmpl % (post['id'],post['postid'],post['title'])).encode(enc) for post in posts])
+    vim.current.buffer.append([(tmpl % (post['id'],post['postid'],post['post_status'],post['title'])).encode(enc) for post in posts])
 
     vim.command("let b:page_size=%s" % num)
     vim.command('map <buffer> <enter> :py _ub_list_open_remote_post()<cr>')
@@ -715,6 +749,9 @@ def ub_list_remote_posts(num=default_remote_pagesize):
 def ub_list_remote_pages():
     '''List remote pages stored in the blog
     '''
+    # Check prerequesites
+    ub_check_prerequesites()
+
     global cfg, api
 
     sess = Session()
@@ -725,13 +762,14 @@ def ub_list_remote_pages():
             page['id'] = 0
         else:
             page['id'] = local_page.id
+            page['page_status'] = local_page.status
     sess.close()
 
     _ub_wise_open_view('remote_page_list')
     enc = vim.eval('&encoding')
     vim.current.buffer[0] = "==================== Blog Pages ===================="
     tmpl = ub_get_list_template()
-    vim.current.buffer.append([(tmpl % (page['id'],page['page_id'],page['title'])).encode(enc) for page in pages])
+    vim.current.buffer.append([(tmpl % (page['id'],page['page_id'],page['page_status'],page['title'])).encode(enc) for page in pages])
 
     vim.command('map <buffer> <enter> :py _ub_list_open_remote_post()<cr>')
     vim.command("map <buffer> <del> :py _ub_list_del_post('remote')<cr>")
@@ -770,6 +808,9 @@ def _ub_list_open_remote_post():
 def ub_open_local_post(id):
     '''Open local post
     '''
+    # Check prerequesites
+    ub_check_prerequesites()
+
     sess = Session()
     post = sess.query(Post).filter(Post.id==id).first()
     if post is None:
@@ -786,7 +827,8 @@ def ub_open_local_post(id):
             title = post.title.encode(enc),
             categories = post.categories.encode(enc),
             tags = post.tags.encode(enc),
-            slug = post.slug.encode(enc))
+            slug = post.slug.encode(enc),
+            status = post.status.encode(enc))
 
     _ub_wise_open_view('post_edit')
     _ub_fill_post_meta_data(post_meta_data)
@@ -802,6 +844,9 @@ def ub_open_local_post(id):
 def ub_open_local_page(id):
     '''Open local page
     '''
+    # Check prerequesites
+    ub_check_prerequesites()
+
     sess = Session()
     page = sess.query(Post).filter(Post.id==id).filter(Post.type=='page').first()
     if page is None:
@@ -816,7 +861,8 @@ def ub_open_local_page(id):
             id = page.id,
             page_id = page_id,
             title = page.title.encode(enc),
-            slug = page.slug.encode(enc))
+            slug = page.slug.encode(enc),
+            status = page.status.encode(enc))
 
     _ub_wise_open_view('page_edit')
     _ub_fill_page_meta_data(page_meta_data)
@@ -832,6 +878,9 @@ def ub_open_local_page(id):
 def ub_open_remote_post(id):
     '''Open remote post
     '''
+    # Check prerequesites
+    ub_check_prerequesites()
+
     global cfg, api
 
     sess = Session()
@@ -846,6 +895,7 @@ def ub_open_remote_post(id):
         post.categories = ', '.join(remote_post['categories'])
         post.tags = remote_post['mt_keywords']
         post.slug = remote_post['wp_slug']
+        post.status = remote_post['post_status']
         post.syntax = 'html'
         sess.add(post)
         sess.commit()
@@ -857,7 +907,8 @@ def ub_open_remote_post(id):
             title = post.title.encode(enc),
             categories = post.categories.encode(enc),
             tags = post.tags.encode(enc),
-            slug = post.slug.encode(enc))
+            slug = post.slug.encode(enc),
+            status = post.status.encode(enc))
 
     _ub_wise_open_view('post_edit')
     _ub_fill_post_meta_data(post_meta_data)
@@ -873,6 +924,9 @@ def ub_open_remote_post(id):
 def ub_open_remote_page(id):
     '''Open remote page
     '''
+    # Check prerequesites
+    ub_check_prerequesites()
+
     global cfg, api
 
     sess = Session()
@@ -886,6 +940,7 @@ def ub_open_remote_page(id):
         page.title = remote_page['title']
         page.content = remote_page['description']
         page.slug = remote_page['wp_slug']
+        page.status = remote_page['page_status']
         page.syntax = 'html'
         sess.add(page)
         sess.commit()
@@ -895,7 +950,8 @@ def ub_open_remote_page(id):
             id = page.id,
             page_id = page.post_id,
             title = page.title.encode(enc),
-            slug = page.slug.encode(enc))
+            slug = page.slug.encode(enc),
+            status = page.status.encode(enc))
 
     _ub_wise_open_view('page_edit')
     _ub_fill_page_meta_data(page_meta_data)
@@ -926,6 +982,9 @@ def _ub_list_del_post(scope='local'):
 def ub_del_post(id, scope='local'):
     '''Delete post or page
     '''
+    # Check prerequesites
+    ub_check_prerequesites()
+
     id = int(id)
     if ub_check_scope(scope):
         choice = vim.eval("confirm('Are you sure to delete %s from local database ?', '&Yes\n&No')" % id)
@@ -941,7 +1000,7 @@ def ub_del_post(id, scope='local'):
             if ub_is_view('local_page_list'):
                 ub_list_pages('local')
             #Delete the current buffer if it contains the deleted post
-            if (ub_is_view('post_edit') or ub_is_view('page_edit')) and _ub_get_meta('id')==id:
+            if (ub_is_view('post_edit') or ub_is_view('page_edit')) and ub_get_meta('id')==id:
                 vim.command('bd!')
     else:
         choice = vim.eval("confirm('Are you sure to delete %s from the blog ?', '&Yes\n&No')" % id)
@@ -958,7 +1017,7 @@ def ub_del_post(id, scope='local'):
             if ub_is_view('remote_page_list'):
                 ub_list_pages('remote')
             #Delete the current buffer if it contains the deleted post
-            if (ub_is_view('post_edit') or ub_is_view('page_edit')) and _ub_get_meta('post_id')==id:
+            if (ub_is_view('post_edit') or ub_is_view('page_edit')) and ub_get_meta('post_id')==id:
                 vim.command('bd!')
 
 @__ub_exception_handler
@@ -1026,6 +1085,26 @@ def ub_check_scope(scope):
     else:
         raise UBException('Invalid scope !')
 
+def ub_check_status(status):
+    '''Check if the given status is valid,
+    return True if status is publish
+    '''
+    if status == 'publish':
+        return True
+    elif status in ['private', 'pending', 'draft']:
+        return False
+    else:
+        raise UBException('Invalid status !')
+
+def ub_check_prerequesites():
+    '''Check prerequesites
+    '''
+    if sqlalchemy is None:
+        raise UBException('No module named sqlalchemy !')
+
+    if markdown is None:
+        raise UBException('No module named markdown or markdown2 !')
+
 def ub_get_list_template():
     '''Return a template string for post or page list
     '''
@@ -1039,9 +1118,14 @@ def ub_get_list_template():
     if tmp is not None and tmp.isdigit() and int(tmp)>0:
         col2_width = int(tmp)
 
-    tmpl = "%%-%ds%%-%ds%%s"
+    col3_width = 10
+    tmp = ub_get_option('ub_list_col3_width')
+    if tmp is not None and tmp.isdigit() and int(tmp)>0:
+        col3_width = int(tmp)
 
-    tmpl = tmpl % (col1_width,col2_width)
+    tmpl = "%%-%ds%%-%ds%%-%ds%%s"
+
+    tmpl = tmpl % (col1_width,col2_width,col3_width)
 
     return tmpl
 
@@ -1054,7 +1138,7 @@ def ub_init():
 
     # Get blog settings
     cfg = _ub_get_blog_settings()
-    if cfg is not None:
+    if cfg is not None and sqlalchemy is not None:
         # Initialize database
         api = _ub_get_api()
         db = sqlalchemy.create_engine("sqlite:///%s" % cfg['db'])
@@ -1064,16 +1148,24 @@ def ub_init():
 @__ub_exception_handler
 def ub_upgrade():
     global db
-
     conn = db.connect()
-    stmt = select([Post.type]).limit(1)
-    try:
-        result = conn.execute(stmt)
-    except OperationalError:
-        sql = "alter table post add type varchar(32) not null default 'post'"
-        conn.execute(sql)
-    finally:
-        conn.close()
+
+    if db is not None:
+        stmt = select([Post.type]).limit(1)
+        try:
+            result = conn.execute(stmt)
+        except OperationalError:
+            sql = "alter table post add type varchar(32) not null default 'post'"
+            conn.execute(sql)
+
+        stmt = select([Post.status]).limit(1)
+        try:
+            result = conn.execute(stmt)
+        except OperationalError:
+            sql = "alter table post add status varchar(32) not null default 'draft'"
+            conn.execute(sql)
+
+    conn.close()
 
 if __name__ == "__main__":
     ub_init()

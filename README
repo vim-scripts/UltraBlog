@@ -12,12 +12,12 @@ This is the exact original intention for which I wrote UltraBlog. After years of
 :UBNew [markdown|html]
 :UBOpen [local|remote] [id]
 :UBSave
-:UBSend [draft|public]
+:UBSend [draft|publish|private|pending]
 :UBPageList [local|remote]
 :UBPageNew [markdown|html]
 :UBPageOpen {id} [local|remote]
 :UBPageSave
-:UBPageSend [draft|public]
+:UBPageSend [draft|publish|private|pending]
 :UBUpload {file_path}
 :UBDel {id} [local|remote]
 :UBPreview
