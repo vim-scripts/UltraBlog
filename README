@@ -6,6 +6,16 @@ You will find UltraBlog very useful when you write posts in the Markdown syntax.
 
 This is the exact original intention for which I wrote UltraBlog. After years of blogging, I've formed the habbit that writing posts in markdown syntax to save time, and I think it is good to always keep my posts updated, rather than post it and forget it. But I found it hard to update the posted copies after modifying the local markdown source files with other Vim blogging plugins. 
 
+Though it is packaged as a vimball and with a filename as UltraBlog.vba, I prefer UltraBlog.vim as the plugins name for that .vim looks very hacker.
+
+Here is a post written in Chinese describing the motion for which I wrote UltraBlog.vim:
+
+http://sinolog.it/?p=1976
+
+Refer to the plugin's page for detail information:
+
+http://sinolog.it/?p=1894
+
 *Commands:*
 
 :UBList [local|remote]
@@ -21,7 +31,5 @@ This is the exact original intention for which I wrote UltraBlog. After years of
 :UBUpload {file_path}
 :UBDel {id} [local|remote]
 :UBPreview
-
-Refer to the plugin's page for detail information:
-
-http://sinolog.it/?p=1894
+:UBThis [markdown|html]
+:UBPageThis [markdown|html]

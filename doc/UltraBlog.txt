@@ -6,7 +6,7 @@
 Author:      Lenin Lee   lenin.lee at gmail dot com       *UltraBlog_Author*
 URL:         http://sinolog.it/?p=1894                    *UltraBlog_URL*
 Description: Ultimate vim blogging plugin.                |UltraBlog_Motivation|
-Version:     1.3                                          |UltraBlog_History|
+Version:     1.4                                          |UltraBlog_History|
 License:     Copyleft                                     |UltraBlog_License|
 Contribute:  Please report any bugs or suggestions        |UltraBlog_Bugs|
              to the address above.                        |UltraBlog_Future|
@@ -152,6 +152,13 @@ remote
     Upload media. This command can only be executed in a post edit view, and the 
     URL of the uploaed file will be appended in that buffer.
 
+:UBThis [markdown|html]                                               *:UBThis*
+:UBPageThis [markdown|html]                                       *:UBPageThis*
+    Create a new post or page which is filled with content in the current 
+    buffer. If no parameter is specified, the syntax in the current buffer is
+    used, if no syntax has been set to the current buffer, then 'markdown' is
+    used.
+
 ==============================================================================
   Options                                                   *UltraBlog_Options*
 ==============================================================================
@@ -219,6 +226,10 @@ If you discover any bugs not listed here, please contact the |UltraBlog_Author|
 ==============================================================================
   History                                                   *UltraBlog_History*
 ==============================================================================
+
+1.4
+    * Feature: Add commands |:UBThis| and |:UBPageThis| to create a new post or
+               page with content in the current buffer.
 
 1.3
     * Feature: Record post statuses, post them in their recorded statuses when 

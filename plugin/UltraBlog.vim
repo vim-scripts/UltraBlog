@@ -2,8 +2,8 @@
 " File:        UltraBlog.vim
 " Description: Ultimate vim blogging plugin that manages web logs
 " Author:      Lenin Lee <lenin.lee at gmail dot com>
-" Version:     1.3
-" Last Change: 2011-04-09
+" Version:     1.4
+" Last Change: 2011-04-12
 " License:     Copyleft.
 "
 " ============================================================================
@@ -31,11 +31,13 @@ command! -nargs=? -complete=custom,SyntaxCmpl UBNew exec('py ub_new_post(<f-args
 command! -nargs=? -complete=custom,StatusCmpl UBSend exec('py ub_send_post(<f-args>)')
 command! -nargs=* -complete=custom,ScopeCmpl UBList exec('py ub_list_posts(<f-args>)')
 command! -nargs=* -complete=custom,ScopeCmpl UBOpen exec('py ub_open_post(<f-args>)')
+command! -nargs=? -complete=custom,SyntaxCmpl UBThis exec('py ub_blog_this_as_post(<f-args>)')
 command! -nargs=0 UBPageSave exec('py ub_save_page()')
 command! -nargs=? -complete=custom,SyntaxCmpl UBPageNew exec('py ub_new_page(<f-args>)')
 command! -nargs=? -complete=custom,StatusCmpl UBPageSend exec('py ub_send_page(<f-args>)')
 command! -nargs=? -complete=custom,ScopeCmpl UBPageList exec('py ub_list_pages(<f-args>)')
 command! -nargs=* -complete=custom,ScopeCmpl UBPageOpen exec('py ub_open_page(<f-args>)')
+command! -nargs=? -complete=custom,SyntaxCmpl UBPageThis exec('py ub_blog_this_as_page(<f-args>)')
 command! -nargs=0 UBPreview exec('py ub_preview()')
 command! -nargs=1 -complete=file UBUpload exec('py ub_upload_media(<f-args>)')
 command! -nargs=* -complete=custom,ScopeCmpl UBDel exec('py ub_del_post(<f-args>)')
@@ -159,8 +161,7 @@ def _ub_wise_open_view(view_name=None):
 def ub_new_post(syntax='markdown'):
     '''Initialize a buffer for writing a new post
     '''
-    if syntax!='markdown' and syntax!='html':
-        raise UBException('Unknown syntax, only markdown and html are valid !')
+    ub_check_syntax(syntax)
 
     post_meta_data = dict(\
             id = str(0),
@@ -201,8 +202,7 @@ def _ub_append_promotion_link(syntax='markdown'):
 def ub_new_page(syntax='markdown'):
     '''Initialize a buffer for writing a new page
     '''
-    if syntax!='markdown' and syntax!='html':
-        raise UBException('Unknown syntax, only markdown and html are valid !')
+    ub_check_syntax(syntax)
 
     page_meta_data = dict(\
             id = str(0),
@@ -1058,6 +1058,39 @@ def ub_upload_media(file_path):
 
     vim.current.range.append(result['url'])
 
+@__ub_exception_handler
+def ub_blog_this(syntax=None, type='post'):
+    '''Create a new post/page with content in the current buffer
+    '''
+    if syntax is None:
+        syntax = vim.eval('&syntax')
+    try:
+        ub_check_syntax(syntax)
+    except:
+        syntax = 'markdown'
+
+    bf = vim.current.buffer[:]
+
+    if type == 'post':
+        ub_new_post(syntax)
+    else:
+        ub_new_page(syntax)
+
+    regex_meta_end = re.compile('^\s*-->')
+    for line_num in range(0, len(vim.current.buffer)):
+        line = vim.current.buffer[line_num]
+        if regex_meta_end.match(line):
+            break
+    vim.current.buffer.append(bf, line_num+1)
+
+@__ub_exception_handler
+def ub_blog_this_as_post(syntax=None):
+    ub_blog_this(syntax, 'post')
+
+@__ub_exception_handler
+def ub_blog_this_as_page(syntax=None):
+    ub_blog_this(syntax, 'page')
+
 def ub_is_view(view_name):
     '''Check if the current view is named by the given parameter
     '''
@@ -1104,6 +1137,12 @@ def ub_check_prerequesites():
 
     if markdown is None:
         raise UBException('No module named markdown or markdown2 !')
+
+def ub_check_syntax(syntax):
+    '''Check syntax, only markdown and html are valid now
+    '''
+    if syntax.lower() not in ['markdown', 'html']:
+        raise UBException('Unknown syntax, only markdown and html are valid !')
 
 def ub_get_list_template():
     '''Return a template string for post or page list
