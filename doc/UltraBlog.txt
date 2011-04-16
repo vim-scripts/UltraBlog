@@ -6,7 +6,7 @@
 Author:      Lenin Lee   lenin.lee at gmail dot com       *UltraBlog_Author*
 URL:         http://sinolog.it/?p=1894                    *UltraBlog_URL*
 Description: Ultimate vim blogging plugin.                |UltraBlog_Motivation|
-Version:     1.4                                          |UltraBlog_History|
+Version:     2.0                                          |UltraBlog_History|
 License:     Copyleft                                     |UltraBlog_License|
 Contribute:  Please report any bugs or suggestions        |UltraBlog_Bugs|
              to the address above.                        |UltraBlog_Future|
@@ -17,55 +17,88 @@ Contribute:  Please report any bugs or suggestions        |UltraBlog_Bugs|
 
              1. Motivation.................|UltraBlog_Motivation|
              2. Operation..................|UltraBlog_Operation|
-                2.1 Modes..................|UltraBlog_ScopeModes|
-             3. Keymaps....................|UltraBlog_Keymaps|
-             4. Commands...................|UltraBlog_Commands|
-             5. Options....................|UltraBlog_Options|
-             6. Bugs.......................|UltraBlog_Bugs|
-             7. Future.....................|UltraBlog_Future|
-             8. History....................|UltraBlog_History|
-             9. License....................|UltraBlog_License|
+                2.1 Modes..................|UltraBlog_Modes|
+                2.2 Scopes.................|UltraBlog_Scopes|
+             3. Prerequisites..............|UltraBlog_Prerequisites|
+             4. Keymaps....................|UltraBlog_Keymaps|
+             5. Commands...................|UltraBlog_Commands|
+             6. Options....................|UltraBlog_Options|
+             7. Bugs.......................|UltraBlog_Bugs|
+             8. Future.....................|UltraBlog_Future|
+             9. History....................|UltraBlog_History|
+            10. License....................|UltraBlog_License|
 
 ==============================================================================
   Motivation                                             *UltraBlog_Motivation*
 ==============================================================================
 
-The biggest difference between UltraBlog and other Vim blogging scripts is 
-that UltraBlog stores and manages posts in a local SQLite database. In this 
-way, it does not only EDIT or SEND posts to blogs but also MANAGE them 
-locally. So UltraBlog is an integrated blogging client more than just a 
-blog editor.
+The biggest difference between UltraBlog.vim and other Vim blogging scripts is 
+that UltraBlog.vim supplies two modes: the first one is editor mode, in which 
+users can manage posts and pages in their blogs, just like other Vim blogging
+scripts; the second is client mode, in which posts and pages are stored in a 
+local SQLite database, in this way, it does not only OPERATE on posts/pages in 
+blogs but also MANAGE them locally. So UltraBlog.vim is an integrated blogging 
+client more than just a blog editor.
 
-You will find UltraBlog very useful when you write posts in the Markdown 
-syntax. With posts stored locally, you can edit them in MARKDOWN syntax 
-at any time even after a long time when they were published, and update 
-the online copies which are in HTML syntax. 
+You will find UltraBlog.vim very useful when you write posts in some light 
+weight markup languages, such as Markdown, LaTeX, reStructuredText and Textile. 
+With posts/pages stored locally, you can edit them in any light weight markup
+language at any time even after a long time when they were published, and update 
+the online copies in HTML syntax. 
 
-This is the exact original intention for which I wrote UltraBlog. After 
-years of blogging, I've formed the habbit that writing posts in markdown 
+This is the exact original intention for which I wrote UltraBlog.vim. After 
+years of blogging, I've formed the habbit that writing posts in Markdown 
 syntax to save time, and I think it is good to always keep my posts updated, 
 rather than post it and forget it. But I found it hard to update the posted 
-copies after modifying the local markdown source files with other Vim blogging 
+copies after modifying the local Markdown source files with other Vim blogging 
 plugins. 
 
 ==============================================================================
   Operation                                               *UltraBlog_Operation*
 ==============================================================================
 
-UltraBlog makes life easier writing or updating blog. It manages posts both 
-locally and remotely.
+UltraBlog.vim makes life easier while writing or updating blogs. It stores
+posts/pages in a local SQLite database. You can also set it to editor mode, in
+which UltraBlog.vim does not store data locally, just like other Vim blogging 
+scripts.
 
-To determine which type of post to manage, UltraBlog provides tow modes, 
-described in the next section.
+By default, UltraBlog.vim is in client mode. You can set it to use editor mode
+by adding the fallowing line to the vimrc file:
 
+Modes                                                          *UltraBlog_Modes*
 
-Scope Modes                                              *UltraBlog_ScopeModes*
+    let ub_editor_mode = 1
 
-local
-    Manage posts stored in a local SQLite database.
+To determine whether to operate on local data or remote data, UltraBlog.vim 
+provides tow scopes:
 
-remote
-    Manage posts posted in blog.
+Scopes                                                        *UltraBlog_Scopes*
+
+    local
+        Manage posts/pages stored in a local SQLite database.
+
+    remote
+        Manage posts/pages in the blog.
+
+==============================================================================
+  Prerequisites                                        *UltraBlog_Prerequisites*
+==============================================================================
+
+UltraBlog.vim requires the following softwares to work normally:
+
+    * Vim with python support enabled.
+    * SQLAlchemy
+    + python-markdown or python-markdown2
+    + pandoc or other
+
+The asterisk items are required at any condition.
+
+One of the two markdown modules of python is needed if you want to convert 
+posts/pages from Markdown to HTML.
+
+pandoc is requried when you need to do conversions between any pair of the 
+avaliable syntaxes. You can also specify you own external command as the 
+converter. For more information, refer to help messages of options below.
 
 ==============================================================================
   Keymaps                                                   *UltraBlog_Keymaps*
@@ -82,8 +115,8 @@ remote
   Commands                                                 *UltraBlog_Commands*
 ==============================================================================
 
-:UBNew [markdown|html]                                                 *:UBNew*
-:UBPageNew [markdown|html]                                         *:UBPageNew*
+:UBNew [markdown\|html\|rst\|textile\|latex]                            *:UBNew*
+:UBPageNew [markdown\|html\|rst\|textile\|latex]                    *:UBPageNew*
     Create a new post. If no parameter is given, UltraBlog will consider that 
     you want to use markdown syntax. All categories are pulled down from your 
     blog and you just need to delete the undesired ones.
@@ -152,12 +185,22 @@ remote
     Upload media. This command can only be executed in a post edit view, and the 
     URL of the uploaed file will be appended in that buffer.
 
-:UBThis [markdown|html]                                               *:UBThis*
-:UBPageThis [markdown|html]                                       *:UBPageThis*
+:UBThis [markdown\|html\|rst\|textile\|latex]                         *:UBThis*
+:UBPageThis [markdown\|html\|rst\|textile\|latex]                 *:UBPageThis*
     Create a new post or page which is filled with content in the current 
     buffer. If no parameter is specified, the syntax in the current buffer is
     used, if no syntax has been set to the current buffer, then 'markdown' is
     used.
+
+:UBConv {to_syntax} [from_syntax]                                      *:UBConv*
+    Convert the current buffer from 'from_syntax' to 'to_syntax'.
+    The available syntaxes are Markdown, HTML, reStructuredText, Textile and
+    LaTeX.
+    If you only need to convert from Markdown to HTML, only python-markdown or
+    python-markdown2 module is required. For other conversion scenarios, you 
+    must install pacdoc or use the options: |ub_converter_command|, 
+    |ub_converter_options|, |ub_converter_option_from|,
+    |ub_converter_option_to| to specify a valid external command.
 
 ==============================================================================
   Options                                                   *UltraBlog_Options*
@@ -175,6 +218,16 @@ ub_blog                                                              *ub_blog*
         db
             Use any path string that can be expanded as a normal fullpath by
             the function 'expand()'.
+
+------------------------------------------------------------------------------
+
+ub_editor_mode                                                 *ub_editor_mode*
+
+    Set this option to 1 will force UltraBlog.vim not to store data in a local
+    SQLite database. You can still use most of the functions UltraBlog.vim
+    supplies, especially those which are used to manage blogs remotely.
+    
+    In one word, this mode works just like other Vim blogging scripts.
 
 ------------------------------------------------------------------------------
 
@@ -211,6 +264,59 @@ ub_list_col3_width                                         *ub_list_col3_width*
     col2 for the remote id column, whose default value is 10.
     col3 for the status column, whose default value is 10.
 
+------------------------------------------------------------------------------
+
+ub_save_after_opend                                       *ub_save_after_opened*
+ub_save_after_sent                                          *ub_save_after_sent*
+
+    If the above options are set to 1, posts/pages will be saved to database
+    immediately after they are opened from or sent to the blog.
+
+    By default, their values are 0s.
+
+------------------------------------------------------------------------------
+
+ub_converter_command                                      *ub_converter_command*
+
+    This is the command needed to do conversions between the avaliable
+    syntaxes.
+
+    By default, the value is:
+
+        'pandoc'
+
+------------------------------------------------------------------------------
+
+ub_converter_options                                      *ub_converter_options*
+
+    A list of options to be appended to the |ub_converter_command|.
+
+    By default, the value is:
+
+        ['--reference-links']
+
+------------------------------------------------------------------------------
+
+ub_converter_option_from                              *ub_converter_option_from*
+
+    A template string which will be filled with the 'from_syntax' and appended
+    to the |ub_converter_command|.
+
+    By default, the value is:
+
+        '--from=%s'
+
+------------------------------------------------------------------------------
+
+ub_converter_option_to                                  *ub_converter_option_to*
+
+    A template string which will be filled with the 'to_syntax' and appended
+    to the |ub_converter_command|.
+
+    By default, the value is:
+
+        '--to=%s'
+
 ==============================================================================
   Future                                                     *UltraBlog_Future*
 ==============================================================================
@@ -227,9 +333,23 @@ If you discover any bugs not listed here, please contact the |UltraBlog_Author|
   History                                                   *UltraBlog_History*
 ==============================================================================
 
+2.0
+    * Feature: Add editor mode.
+    * Feature: Add more syntaxes: LaTeX, reStructuredText and Textile.
+    * Feature: Add command |:UBConv| to convert a post/page from one syntax to
+               another.
+    * Feature: Add options |ub_converter_command|, |ub_converter_options|, 
+               |ub_converter_option_from|, |ub_converter_option_to| to specify 
+               a custom extenal command in place of pandoc as the converter.
+    * Feature: Add option |ub_save_after_opened| to control whether to save 
+               posts/pages to database right after they are fetched from
+               blogs.
+    * Feature: Add option |ub_save_after_sent| to control whether to save
+               posts/pages to database right after they are sent to blogs.
+
 1.4
-    * Feature: Add commands |:UBThis| and |:UBPageThis| to create a new post or
-               page with content in the current buffer.
+    * Feature: Add two commands: |:UBThis| and |:UBPageThis|, to create a new post 
+               or page with content in the current buffer.
 
 1.3
     * Feature: Record post statuses, post them in their recorded statuses when 

@@ -2,8 +2,8 @@
 " File:        UltraBlog.vim
 " Description: Ultimate vim blogging plugin that manages web logs
 " Author:      Lenin Lee <lenin.lee at gmail dot com>
-" Version:     1.4
-" Last Change: 2011-04-12
+" Version:     2.0
+" Last Change: 2011-04-14
 " License:     Copyleft.
 "
 " ============================================================================
@@ -15,7 +15,7 @@ if !has("python")
 endif
 
 function! SyntaxCmpl(ArgLead, CmdLine, CursorPos)
-  return "markdown\nhtml\n"
+  return "markdown\nhtml\nrst\ntextile\nlatex\n"
 endfunction
 
 function! StatusCmpl(ArgLead, CmdLine, CursorPos)
@@ -41,6 +41,7 @@ command! -nargs=? -complete=custom,SyntaxCmpl UBPageThis exec('py ub_blog_this_a
 command! -nargs=0 UBPreview exec('py ub_preview()')
 command! -nargs=1 -complete=file UBUpload exec('py ub_upload_media(<f-args>)')
 command! -nargs=* -complete=custom,ScopeCmpl UBDel exec('py ub_del_post(<f-args>)')
+command! -nargs=* -complete=custom,SyntaxCmpl UBConv exec('py ub_convert(<f-args>)')
 
 " Clear undo history
 function! UBClearUndo()
@@ -286,7 +287,10 @@ def _ub_get_blog_settings():
     cfg = vim.eval('ub_blog')
 
     #Manipulate db file path
-    if not cfg.has_key('db') or cfg['db'].strip()=='':
+    editor_mode = ub_get_option('ub_editor_mode')
+    if editor_mode is not None and editor_mode.isdigit() and int(editor_mode) == 1:
+        cfg['db'] = ''
+    elif not cfg.has_key('db') or cfg['db'].strip()=='':
         cfg['db'] = os.path.normpath(os.path.expanduser('~')+'/.vim/UltraBlog.db')
     else:
         cfg['db'] = os.path.abspath(vim.eval("expand('%s')" % cfg['db']))
@@ -307,6 +311,9 @@ def ub_save_post():
     # Do not bother if the current buffer is not modified
     if vim.eval('&modified')=='0':
         return
+
+    # Set editor mode if the corresponding option has been set
+    ub_set_mode()
 
     sess = Session()
     enc = vim.eval('&encoding')
@@ -352,6 +359,9 @@ def ub_save_page():
     # Do not bother if the current buffer is not modified
     if vim.eval('&modified')=='0':
         return
+
+    # Set editor mode if the corresponding option has been set
+    ub_set_mode()
 
     sess = Session()
     enc = vim.eval('&encoding')
@@ -483,6 +493,9 @@ def ub_send_post(status=None):
     if not ub_is_view('post_edit'):
         raise UBException('Invalid view !')
 
+    # Set editor mode if the corresponding option has been set
+    ub_set_mode()
+
     # Check parameter
     if status is None:
         status = ub_get_meta('status')
@@ -507,11 +520,14 @@ def ub_send_post(status=None):
     else:
         api.metaWeblog.editPost(post_id, cfg['login_name'], cfg['password'], post, publish)
         msg = "Post sent as %s !" % status
+    sys.stdout.write(msg)
 
     ub_set_meta('post_id', post_id)
     ub_set_meta('status', status)
-    ub_save_post()
-    sys.stdout.write(msg)
+
+    saveit = ub_get_option('ub_save_after_sent')
+    if saveit is not None and saveit.isdigit() and int(saveit) == 1:
+        ub_save_post()
 
 @__ub_exception_handler
 def ub_send_page(status=None):
@@ -523,6 +539,9 @@ def ub_send_page(status=None):
     # This function is valid only in 'page_edit' buffers
     if not ub_is_view('page_edit'):
         raise UBException('Invalid view !')
+
+    # Set editor mode if the corresponding option has been set
+    ub_set_mode()
 
     # Check parameter
     if status is None:
@@ -546,14 +565,17 @@ def ub_send_page(status=None):
     else:
         api.metaWeblog.editPost(page_id, cfg['login_name'], cfg['password'], page, publish)
         msg = "Page sent as %s !" % status
+    sys.stdout.write(msg)
 
     ub_set_meta('page_id', page_id)
     ub_set_meta('status', status)
-    ub_save_page()
-    sys.stdout.write(msg)
 
-def _ub_get_html(body_only=True):
-    '''Generate HTML string from the current buffer
+    saveit = ub_get_option('ub_save_after_sent')
+    if saveit is not None and saveit.isdigit() and int(saveit) == 1:
+        ub_save_page()
+
+def _ub_get_content():
+    '''Generate content from the current buffer
     '''
     if ub_is_view('post_edit'):
         meta_dict = _ub_get_post_meta_data()
@@ -562,12 +584,30 @@ def _ub_get_html(body_only=True):
     else:
         return None
 
+    content = "\n".join(vim.current.buffer[len(meta_dict)+2:])
+    return content
+
+def _ub_set_content(lines):
+    '''Set the given lines to the content area of the current buffer
+    '''
+    if ub_is_view('post_edit'):
+        meta_dict = _ub_get_post_meta_data()
+    elif ub_is_view('page_edit'):
+        meta_dict = _ub_get_page_meta_data()
+    else:
+        return False
+
+    del vim.current.buffer[len(meta_dict)+2:]
+    vim.current.buffer.append(lines, len(meta_dict)+2)
+    return True
+
+def _ub_get_html(body_only=True):
+    '''Generate HTML string from the current buffer
+    '''
+    content = _ub_get_content()
     syntax = vim.eval('&syntax')
     enc = vim.eval('&encoding')
-    if syntax == 'markdown':
-        html = markdown.markdown("\n".join(vim.current.buffer[len(meta_dict)+2:]).decode(enc)).encode(enc)
-    else:
-        html = "\n".join(vim.current.buffer[len(meta_dict)+2:])
+    html = ub_convert('html', syntax, True)
 
     if not body_only:
         html = \
@@ -620,6 +660,9 @@ def ub_list_local_posts(page_no=1, page_size=default_local_pagesize):
     if page_no<1 or page_size<1:
         return
 
+    # Set editor mode if the corresponding option has been set
+    ub_set_mode()
+
     global db
     posts = []
 
@@ -670,6 +713,9 @@ def ub_list_local_pages():
     # Check prerequesites
     ub_check_prerequesites()
 
+    # Set editor mode if the corresponding option has been set
+    ub_set_mode()
+
     global db
     pages = []
 
@@ -715,6 +761,9 @@ def ub_list_remote_posts(num=default_remote_pagesize):
     # Check prerequesites
     ub_check_prerequesites()
 
+    # Set editor mode if the corresponding option has been set
+    ub_set_mode()
+
     if num<1:
         return
 
@@ -751,6 +800,9 @@ def ub_list_remote_pages():
     '''
     # Check prerequesites
     ub_check_prerequesites()
+
+    # Set editor mode if the corresponding option has been set
+    ub_set_mode()
 
     global cfg, api
 
@@ -811,6 +863,9 @@ def ub_open_local_post(id):
     # Check prerequesites
     ub_check_prerequesites()
 
+    # Set editor mode if the corresponding option has been set
+    ub_set_mode()
+
     sess = Session()
     post = sess.query(Post).filter(Post.id==id).first()
     if post is None:
@@ -847,6 +902,9 @@ def ub_open_local_page(id):
     # Check prerequesites
     ub_check_prerequesites()
 
+    # Set editor mode if the corresponding option has been set
+    ub_set_mode()
+
     sess = Session()
     page = sess.query(Post).filter(Post.id==id).filter(Post.type=='page').first()
     if page is None:
@@ -881,6 +939,9 @@ def ub_open_remote_post(id):
     # Check prerequesites
     ub_check_prerequesites()
 
+    # Set editor mode if the corresponding option has been set
+    ub_set_mode()
+
     global cfg, api
 
     sess = Session()
@@ -897,12 +958,18 @@ def ub_open_remote_post(id):
         post.slug = remote_post['wp_slug']
         post.status = remote_post['post_status']
         post.syntax = 'html'
-        sess.add(post)
-        sess.commit()
 
+        saveit = ub_get_option('ub_save_after_opened')
+        if saveit is not None and saveit.isdigit() and int(saveit) == 1:
+            sess.add(post)
+            sess.commit()
+
+    id = post.id
+    if post.id is None:
+        id = 0
     enc = vim.eval('&encoding')
     post_meta_data = dict(\
-            id = post.id,
+            id = id,
             post_id = post.post_id,
             title = post.title.encode(enc),
             categories = post.categories.encode(enc),
@@ -927,6 +994,9 @@ def ub_open_remote_page(id):
     # Check prerequesites
     ub_check_prerequesites()
 
+    # Set editor mode if the corresponding option has been set
+    ub_set_mode()
+
     global cfg, api
 
     sess = Session()
@@ -942,12 +1012,18 @@ def ub_open_remote_page(id):
         page.slug = remote_page['wp_slug']
         page.status = remote_page['page_status']
         page.syntax = 'html'
-        sess.add(page)
-        sess.commit()
 
+        saveit = ub_get_option('ub_save_after_opened')
+        if saveit is not None and saveit.isdigit() and int(saveit) == 1:
+            sess.add(page)
+            sess.commit()
+
+    id = page.id
+    if page.id is None:
+        id = 0
     enc = vim.eval('&encoding')
     page_meta_data = dict(\
-            id = page.id,
+            id = id,
             page_id = page.post_id,
             title = page.title.encode(enc),
             slug = page.slug.encode(enc),
@@ -984,6 +1060,9 @@ def ub_del_post(id, scope='local'):
     '''
     # Check prerequesites
     ub_check_prerequesites()
+
+    # Set editor mode if the corresponding option has been set
+    ub_set_mode()
 
     id = int(id)
     if ub_check_scope(scope):
@@ -1084,6 +1163,42 @@ def ub_blog_this(syntax=None, type='post'):
     vim.current.buffer.append(bf, line_num+1)
 
 @__ub_exception_handler
+def ub_convert(to_syntax, from_syntax=None, literal=False):
+    '''Convert the current buffer from one syntax to another
+    '''
+    ub_check_syntax(to_syntax)
+    if from_syntax is None:
+        from_syntax = vim.eval('&syntax')
+    ub_check_syntax(from_syntax)
+
+    content = _ub_get_content()
+
+    if from_syntax == to_syntax:
+        return content
+
+    enc = vim.eval('&encoding')
+    if from_syntax == 'markdown' and to_syntax == 'html':
+        new_content = markdown.markdown(content.decode(enc)).encode(enc)
+    else:
+        cmd_parts = []
+        cmd_parts.append(ub_get_option('ub_converter_command'))
+        cmd_parts.extend(ub_get_option('ub_converter_options'))
+        try:
+            cmd_parts.append(ub_get_option('ub_converter_option_from') % from_syntax)
+            cmd_parts.append(ub_get_option('ub_converter_option_to') % to_syntax)
+        except TypeError:
+            pass
+        import subprocess
+        p = subprocess.Popen(cmd_parts, stdin=subprocess.PIPE, stdout=subprocess.PIPE)
+        new_content = p.communicate(content)[0].replace("\r\n", "\n")
+
+    if literal == True:
+        return new_content
+    else:
+        _ub_set_content(new_content.split("\n"))
+        vim.command('setl syntax=%s' % to_syntax)
+
+@__ub_exception_handler
 def ub_blog_this_as_post(syntax=None):
     ub_blog_this(syntax, 'post')
 
@@ -1101,9 +1216,18 @@ def ub_get_option(opt):
     '''
     if vim.eval('exists("%s")' % opt) == '1':
         val = vim.eval(opt)
-        return val
+    elif opt == 'ub_converter_command':
+        val = 'pandoc'
+    elif opt == 'ub_converter_option_from':
+        val = '--from=%s'
+    elif opt == 'ub_converter_option_to':
+        val = '--to=%s'
+    elif opt == 'ub_converter_options':
+        val = ['--reference-links']
     else:
-        return None
+        val = None
+
+    return val
 
 def ub_check_scope(scope):
     '''Check the given scope,
@@ -1139,10 +1263,11 @@ def ub_check_prerequesites():
         raise UBException('No module named markdown or markdown2 !')
 
 def ub_check_syntax(syntax):
-    '''Check syntax, only markdown and html are valid now
+    '''Check syntax
     '''
-    if syntax.lower() not in ['markdown', 'html']:
-        raise UBException('Unknown syntax, only markdown and html are valid !')
+    valid_syntax = ['markdown', 'html', 'rst', 'textile', 'latex']
+    if syntax.lower() not in valid_syntax:
+        raise UBException('Unknown syntax, valid syntaxes are %s' % str(valid_syntax))
 
 def ub_get_list_template():
     '''Return a template string for post or page list
@@ -1167,6 +1292,14 @@ def ub_get_list_template():
     tmpl = tmpl % (col1_width,col2_width,col3_width)
 
     return tmpl
+
+@__ub_exception_handler
+def ub_set_mode():
+    '''Set editor mode according to the option ub_editor_mode
+    '''
+    editor_mode = ub_get_option('ub_editor_mode')
+    if editor_mode is not None and editor_mode.isdigit() and int(editor_mode) == 1:
+        ub_init()
 
 @__ub_exception_handler
 def ub_init():
