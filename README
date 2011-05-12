@@ -26,8 +26,6 @@ http://sinolog.it/?p=1894
 :UBPageList [local|remote]
 :UBPageNew [markdown|html|rst|textile|latex]
 :UBPageOpen {id} [local|remote]
-:UBPageSave
-:UBPageSend [draft|publish|private|pending]
 :UBUpload {file_path}
 :UBDel {id} [local|remote]
 :UBPreview

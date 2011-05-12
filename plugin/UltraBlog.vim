@@ -2,8 +2,8 @@
 " File:        UltraBlog.vim
 " Description: Ultimate vim blogging plugin that manages web logs
 " Author:      Lenin Lee <lenin.lee at gmail dot com>
-" Version:     2.0
-" Last Change: 2011-04-14
+" Version:     2.0.1
+" Last Change: 2011-05-12
 " License:     Copyleft.
 "
 " ============================================================================
@@ -1127,7 +1127,7 @@ def ub_upload_media(file_path):
         raise UBException('File not exists !')
 
     file_type = mimetypes.guess_type(file_path)[0]
-    fp = open(file_path, 'r')
+    fp = open(file_path, 'rb')
     bin_data = xmlrpclib.Binary(fp.read())
     fp.close()
 
@@ -1320,9 +1320,9 @@ def ub_init():
 @__ub_exception_handler
 def ub_upgrade():
     global db
-    conn = db.connect()
 
     if db is not None:
+        conn = db.connect()
         stmt = select([Post.type]).limit(1)
         try:
             result = conn.execute(stmt)
@@ -1337,7 +1337,7 @@ def ub_upgrade():
             sql = "alter table post add status varchar(32) not null default 'draft'"
             conn.execute(sql)
 
-    conn.close()
+        conn.close()
 
 if __name__ == "__main__":
     ub_init()
