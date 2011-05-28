@@ -2,8 +2,8 @@
 " File:        UltraBlog.vim
 " Description: Ultimate vim blogging plugin that manages web logs
 " Author:      Lenin Lee <lenin.lee at gmail dot com>
-" Version:     2.0.1
-" Last Change: 2011-05-12
+" Version:     2.1.0
+" Last Change: 2011-05-27
 " License:     Copyleft.
 "
 " ============================================================================
@@ -44,12 +44,24 @@ command! -nargs=* -complete=custom,ScopeCmpl UBDel exec('py ub_del_post(<f-args>
 command! -nargs=* -complete=custom,SyntaxCmpl UBConv exec('py ub_convert(<f-args>)')
 
 " Clear undo history
-function! UBClearUndo()
+function! s:UBClearUndo()
     let old_undolevels = &undolevels
     set undolevels=-1
     exe "normal a \<BS>\<Esc>"
     let &undolevels = old_undolevels
     unlet old_undolevels
+endfunction
+
+" Open the item under cursor in list views
+function! UBOpenItemUnderCursor(viewType)
+    if s:UBIsView('local_post_list') || s:UBIsView('local_page_list') || s:UBIsView('remote_page_list') || s:UBIsView('remote_post_list')
+        exe 'py _ub_list_open_item("'.a:viewType.'")'
+    endif
+endfunction
+
+" Check if the current buffer is named with the given name
+function! s:UBIsView(viewName)
+    return exists('b:ub_view_name') && b:ub_view_name==a:viewName
 endfunction
 
 python <<EOF
@@ -70,7 +82,7 @@ try:
     from sqlalchemy.ext.declarative import declarative_base
     from sqlalchemy.orm import sessionmaker
     from sqlalchemy.sql import union_all,select,case
-    from sqlalchemy.exceptions import OperationalError
+    from sqlalchemy.exc import OperationalError
 
     Base = declarative_base()
     Session = sessionmaker()
@@ -91,6 +103,7 @@ try:
 except ImportError, e:
     sqlalchemy = None
     db = None
+    print e
 except Exception:
     pass
 
@@ -141,14 +154,18 @@ def __ub_enc_check(func):
         return func(*args, **kw)
     return __check
 
-def _ub_wise_open_view(view_name=None):
+def _ub_wise_open_view(view_name=None, view_type=None):
     '''Wisely decide whether to wipe out the content of current buffer 
-    or to open a new splited window.
+    or to open a new splitted window or a new tab.
     '''
-    if vim.current.buffer.name is None and vim.eval('&modified')=='0':
+    if view_type == 'tab':
+        vim.command(":tabnew")
+    elif view_type == 'split':
+        vim.command(":new")
+    elif vim.current.buffer.name is None and vim.eval('&modified')=='0':
         vim.command('setl modifiable')
         del vim.current.buffer[:]
-        vim.command('call UBClearUndo()')
+        vim.command('call s:UBClearUndo()')
         vim.command('setl nomodified')
     else:
         vim.command(":new")
@@ -179,7 +196,7 @@ def ub_new_post(syntax='markdown'):
 
     vim.command('setl syntax=%s' % syntax)
     vim.command('setl wrap')
-    vim.command('call UBClearUndo()')
+    vim.command('call s:UBClearUndo()')
     vim.command('setl nomodified')
     vim.current.window.cursor = (4, len(vim.current.buffer[3])-1)
 
@@ -217,7 +234,7 @@ def ub_new_page(syntax='markdown'):
 
     vim.command('setl syntax=%s' % syntax)
     vim.command('setl wrap')
-    vim.command('call UBClearUndo()')
+    vim.command('call s:UBClearUndo()')
     vim.command('setl nomodified')
     vim.current.window.cursor = (4, len(vim.current.buffer[3])-1)
 
@@ -697,11 +714,13 @@ def ub_list_local_posts(page_no=1, page_size=default_local_pagesize):
 
     vim.command("let b:page_no=%s" % page_no)
     vim.command("let b:page_size=%s" % page_size)
-    vim.command('map <buffer> <enter> :py _ub_list_open_local_post()<cr>')
-    vim.command("map <buffer> <del> :py _ub_list_del_post('local')<cr>")
-    vim.command("map <buffer> <c-pagedown> :py ub_list_local_posts(%d,%d)<cr>" % (page_no+1,page_size))
-    vim.command("map <buffer> <c-pageup> :py ub_list_local_posts(%d,%d)<cr>" % (page_no-1,page_size))
-    vim.command('call UBClearUndo()')
+    vim.command("map <buffer> "+ub_get_option('ub_hotkey_open_item_in_current_view')+" :call UBOpenItemUnderCursor('cur')<cr>")
+    vim.command("map <buffer> "+ub_get_option('ub_hotkey_open_item_in_splitted_view')+" :call UBOpenItemUnderCursor('split')<cr>")
+    vim.command("map <buffer> "+ub_get_option('ub_hotkey_open_item_in_tabbed_view')+" :call UBOpenItemUnderCursor('tab')<cr>")
+    vim.command("map <buffer> "+ub_get_option('ub_hotkey_delete_item')+" :py _ub_list_del_post('local')<cr>")
+    vim.command("map <buffer> "+ub_get_option('ub_hotkey_pagedown')+" :py ub_list_local_posts(%d,%d)<cr>" % (page_no+1,page_size))
+    vim.command("map <buffer> "+ub_get_option('ub_hotkey_pageup')+" :py ub_list_local_posts(%d,%d)<cr>" % (page_no-1,page_size))
+    vim.command('call s:UBClearUndo()')
     vim.command('setl nomodified')
     vim.command("setl nomodifiable")
     vim.current.window.cursor = (2, 0)
@@ -747,9 +766,11 @@ def ub_list_local_pages():
     tmpl = ub_get_list_template()
     vim.current.buffer.append([(tmpl % (page.id,page.post_id,page.status,page.title)).encode(enc) for page in pages])
 
-    vim.command('map <buffer> <enter> :py _ub_list_open_local_post()<cr>')
-    vim.command("map <buffer> <del> :py _ub_list_del_post('local')<cr>")
-    vim.command('call UBClearUndo()')
+    vim.command("map <buffer> "+ub_get_option('ub_hotkey_open_item_in_current_view')+" :call UBOpenItemUnderCursor('cur')<cr>")
+    vim.command("map <buffer> "+ub_get_option('ub_hotkey_open_item_in_splitted_view')+" :call UBOpenItemUnderCursor('split')<cr>")
+    vim.command("map <buffer> "+ub_get_option('ub_hotkey_open_item_in_tabbed_view')+" :call UBOpenItemUnderCursor('tab')<cr>")
+    vim.command("map <buffer> "+ub_get_option('ub_hotkey_delete_item')+" :py _ub_list_del_post('local')<cr>")
+    vim.command('call s:UBClearUndo()')
     vim.command('setl nomodified')
     vim.command("setl nomodifiable")
     vim.current.window.cursor = (2, 0)
@@ -787,9 +808,11 @@ def ub_list_remote_posts(num=default_remote_pagesize):
     vim.current.buffer.append([(tmpl % (post['id'],post['postid'],post['post_status'],post['title'])).encode(enc) for post in posts])
 
     vim.command("let b:page_size=%s" % num)
-    vim.command('map <buffer> <enter> :py _ub_list_open_remote_post()<cr>')
-    vim.command("map <buffer> <del> :py _ub_list_del_post('remote')<cr>")
-    vim.command('call UBClearUndo()')
+    vim.command("map <buffer> "+ub_get_option('ub_hotkey_open_item_in_current_view')+" :call UBOpenItemUnderCursor('cur')<cr>")
+    vim.command("map <buffer> "+ub_get_option('ub_hotkey_open_item_in_splitted_view')+" :call UBOpenItemUnderCursor('split')<cr>")
+    vim.command("map <buffer> "+ub_get_option('ub_hotkey_open_item_in_tabbed_view')+" :call UBOpenItemUnderCursor('tab')<cr>")
+    vim.command("map <buffer> "+ub_get_option('ub_hotkey_delete_item')+" :py _ub_list_del_post('remote')<cr>")
+    vim.command('call s:UBClearUndo()')
     vim.command('setl nomodified')
     vim.command("setl nomodifiable")
     vim.current.window.cursor = (2, 0)
@@ -823,41 +846,37 @@ def ub_list_remote_pages():
     tmpl = ub_get_list_template()
     vim.current.buffer.append([(tmpl % (page['id'],page['page_id'],page['page_status'],page['title'])).encode(enc) for page in pages])
 
-    vim.command('map <buffer> <enter> :py _ub_list_open_remote_post()<cr>')
-    vim.command("map <buffer> <del> :py _ub_list_del_post('remote')<cr>")
-    vim.command('call UBClearUndo()')
+    vim.command("map <buffer> "+ub_get_option('ub_hotkey_open_item_in_current_view')+" :call UBOpenItemUnderCursor('cur')<cr>")
+    vim.command("map <buffer> "+ub_get_option('ub_hotkey_open_item_in_splitted_view')+" :call UBOpenItemUnderCursor('split')<cr>")
+    vim.command("map <buffer> "+ub_get_option('ub_hotkey_open_item_in_tabbed_view')+" :call UBOpenItemUnderCursor('tab')<cr>")
+    vim.command("map <buffer> "+ub_get_option('ub_hotkey_delete_item')+" :py _ub_list_del_post('remote')<cr>")
+    vim.command('call s:UBClearUndo()')
     vim.command('setl nomodified')
     vim.command("setl nomodifiable")
     vim.current.window.cursor = (2, 0)
 
-def _ub_list_open_local_post():
-    '''Open local post, invoked in post or page list
+def _ub_list_open_item(view_type=None):
+    '''Open the item under cursor, invoked in post or page list
     '''
     parts = vim.current.line.split()
-    if len(parts)>=2 and parts[0].isdigit():
-        id = int(parts[0])
+    if len(parts)>=2 and parts[0].isdigit() and parts[1].isdigit():
         if ub_is_view('local_post_list'):
-            ub_open_local_post(id)
+            id = int(parts[0])
+            ub_open_local_post(id, view_type)
         elif ub_is_view('local_page_list'):
-            ub_open_local_page(id)
-        else:
-            raise UBException('Invalid view !')
-
-def _ub_list_open_remote_post():
-    '''Open remote post, invoked in post or page list
-    '''
-    parts = vim.current.line.split()
-    if len(parts)>=2 and parts[1].isdigit():
-        id = int(parts[1])
-        if ub_is_view('remote_post_list'):
-            ub_open_remote_post(id)
+            id = int(parts[0])
+            ub_open_local_page(id, view_type)
+        elif ub_is_view('remote_post_list'):
+            id = int(parts[1])
+            ub_open_remote_post(id, view_type)
         elif ub_is_view('remote_page_list'):
-            ub_open_remote_page(id)
+            id = int(parts[1])
+            ub_open_remote_page(id, view_type)
         else:
             raise UBException('Invalid view !')
 
 @__ub_exception_handler
-def ub_open_local_post(id):
+def ub_open_local_post(id, view_type=None):
     '''Open local post
     '''
     # Check prerequesites
@@ -885,18 +904,18 @@ def ub_open_local_post(id):
             slug = post.slug.encode(enc),
             status = post.status.encode(enc))
 
-    _ub_wise_open_view('post_edit')
+    _ub_wise_open_view('post_edit', view_type)
     _ub_fill_post_meta_data(post_meta_data)
     vim.current.buffer.append(post.content.encode(enc).split("\n"))
 
     vim.command('setl syntax=%s' % post.syntax)
     vim.command('setl wrap')
-    vim.command('call UBClearUndo()')
+    vim.command('call s:UBClearUndo()')
     vim.command('setl nomodified')
     vim.current.window.cursor = (len(post_meta_data)+3, 0)
 
 @__ub_exception_handler
-def ub_open_local_page(id):
+def ub_open_local_page(id, view_type=None):
     '''Open local page
     '''
     # Check prerequesites
@@ -922,18 +941,18 @@ def ub_open_local_page(id):
             slug = page.slug.encode(enc),
             status = page.status.encode(enc))
 
-    _ub_wise_open_view('page_edit')
+    _ub_wise_open_view('page_edit', view_type)
     _ub_fill_page_meta_data(page_meta_data)
     vim.current.buffer.append(page.content.encode(enc).split("\n"))
 
     vim.command('setl syntax=%s' % page.syntax)
     vim.command('setl wrap')
-    vim.command('call UBClearUndo()')
+    vim.command('call s:UBClearUndo()')
     vim.command('setl nomodified')
     vim.current.window.cursor = (len(page_meta_data)+3, 0)
 
 @__ub_exception_handler
-def ub_open_remote_post(id):
+def ub_open_remote_post(id, view_type=None):
     '''Open remote post
     '''
     # Check prerequesites
@@ -977,18 +996,18 @@ def ub_open_remote_post(id):
             slug = post.slug.encode(enc),
             status = post.status.encode(enc))
 
-    _ub_wise_open_view('post_edit')
+    _ub_wise_open_view('post_edit', view_type)
     _ub_fill_post_meta_data(post_meta_data)
     vim.current.buffer.append(post.content.encode(enc).split("\n"))
 
     vim.command('setl syntax=%s' % post.syntax)
     vim.command('setl wrap')
-    vim.command('call UBClearUndo()')
+    vim.command('call s:UBClearUndo()')
     vim.command('setl nomodified')
     vim.current.window.cursor = (len(post_meta_data)+3, 0)
 
 @__ub_exception_handler
-def ub_open_remote_page(id):
+def ub_open_remote_page(id, view_type=None):
     '''Open remote page
     '''
     # Check prerequesites
@@ -1029,13 +1048,13 @@ def ub_open_remote_page(id):
             slug = page.slug.encode(enc),
             status = page.status.encode(enc))
 
-    _ub_wise_open_view('page_edit')
+    _ub_wise_open_view('page_edit', view_type)
     _ub_fill_page_meta_data(page_meta_data)
     vim.current.buffer.append(page.content.encode(enc).split("\n"))
 
     vim.command('setl syntax=%s' % page.syntax)
     vim.command('setl wrap')
-    vim.command('call UBClearUndo()')
+    vim.command('call s:UBClearUndo()')
     vim.command('setl nomodified')
     vim.current.window.cursor = (len(page_meta_data)+3, 0)
 
@@ -1224,6 +1243,18 @@ def ub_get_option(opt):
         val = '--to=%s'
     elif opt == 'ub_converter_options':
         val = ['--reference-links']
+    elif opt == 'ub_hotkey_open_item_in_current_view':
+        val = '<enter>'
+    elif opt == 'ub_hotkey_open_item_in_splitted_view':
+        val = '<s-enter>'
+    elif opt == 'ub_hotkey_open_item_in_tabbed_view':
+        val = '<c-enter>'
+    elif opt == 'ub_hotkey_delete_item':
+        val = '<del>'
+    elif opt == 'ub_hotkey_pagedown':
+        val = '<c-pagedown>'
+    elif opt == 'ub_hotkey_pageup':
+        val = '<c-pageup>'
     else:
         val = None
 
@@ -1257,7 +1288,7 @@ def ub_check_prerequesites():
     '''Check prerequesites
     '''
     if sqlalchemy is None:
-        raise UBException('No module named sqlalchemy !')
+        raise UBException('SQLAlchemy v0.7 or newer is required !')
 
     if markdown is None:
         raise UBException('No module named markdown or markdown2 !')

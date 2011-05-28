@@ -6,7 +6,7 @@
 Author:      Lenin Lee   lenin.lee at gmail dot com       *UltraBlog_Author*
 URL:         http://sinolog.it/?p=1894                    *UltraBlog_URL*
 Description: Ultimate vim blogging plugin.                |UltraBlog_Motivation|
-Version:     2.0.1                                        |UltraBlog_History|
+Version:     2.1.0                                        |UltraBlog_History|
 License:     Copyleft                                     |UltraBlog_License|
 Contribute:  Please report any bugs or suggestions        |UltraBlog_Bugs|
              to the address above.                        |UltraBlog_Future|
@@ -86,8 +86,8 @@ Scopes                                                        *UltraBlog_Scopes*
 
 UltraBlog.vim requires the following softwares to work normally:
 
-    * Vim with python support enabled.
-    * SQLAlchemy
+    * Vim with python support enabled
+    * SQLAlchemy 0.7 or newer
     + python-markdown or python-markdown2
     + pandoc or other
 
@@ -101,15 +101,20 @@ avaliable syntaxes. You can also specify you own external command as the
 converter. For more information, refer to help messages of options below.
 
 ==============================================================================
-  Keymaps                                                   *UltraBlog_Keymaps*
+  Keymappings                                            *UltraBlog_Keymappings*
 ==============================================================================
+
+All keymappings can be customized by setting some options, refer to
+|UltraBlog_Options| for detail information.
 
 <c-pageup>    - Shift to previous page in local post list.
 <c-pagedown>  - Shift to next page in local post list.
 <del>         - Delete the post under cursor in post list.
-<enter>       - Open the post under cursor in post list, if is in remote post
-                list, posts which are not in local database will be saved to 
-                it before opened.
+<enter>       - Open the post/page under cursor in the current view, if is in 
+                remote post list, posts which are not in local database will 
+                be saved to it before opened.
+<s-enter>     - Open the post/page under cursor in a new splitted window.
+<c-enter>     - Open the post/page under cursor in a new tab.
 
 ==============================================================================
   Commands                                                 *UltraBlog_Commands*
@@ -317,6 +322,50 @@ ub_converter_option_to                                  *ub_converter_option_to*
 
         '--to=%s'
 
+------------------------------------------------------------------------------
+
+ub_hotkey_open_item_in_current_view        *ub_hotkey_open_item_in_current_view*
+
+    Set the hotkey to be used when to open a post/page in the list view. When
+    invoked, the list view will be reused.
+
+    By default, the value is:
+
+    let ub_hotkey_open_item_in_current_view='<enter>'
+
+------------------------------------------------------------------------------
+
+ub_hotkey_open_item_in_splitted_view      *ub_hotkey_open_item_in_splitted_view*
+
+    Set the hotkey to be used when to open a post/page in the list view. When
+    invoked, the post/page will be displayed in a new splitted window.
+
+    By default, the value is:
+
+    let ub_hotkey_open_item_in_splitted_view='<s-enter>'
+
+------------------------------------------------------------------------------
+
+ub_hotkey_open_item_in_tabbed_view          *ub_hotkey_open_item_in_tabbed_view*
+
+    Set the hotkey to be used when to open a post/page in the list view. When
+    invoked, the post/page will be displayed in a new tab.
+
+    By default, the value is:
+
+    let ub_hotkey_open_item_in_tabbed_view='<c-enter>'
+
+------------------------------------------------------------------------------
+
+ub_hotkey_delete_item                                    *ub_hotkey_delete_item*
+
+    Set the hotkey to be used when to delete a post/page in the list view. 
+    When invoked, the post/page will be deleted after a confirmation.
+
+    By default, the value is:
+
+    let ub_hotkey_delete_item='<del>'
+
 ==============================================================================
   Future                                                     *UltraBlog_Future*
 ==============================================================================
@@ -332,6 +381,15 @@ If you discover any bugs not listed here, please contact the |UltraBlog_Author|
 ==============================================================================
   History                                                   *UltraBlog_History*
 ==============================================================================
+
+2.1.0
+    * Change:  Increase the requirement to SQLAlchemy to version 0.7 or newer.
+    * Feature: Now posts/pages can be opened in a new tab or splitted window.
+    * Feature: Add options to let users customize hotkeys:
+                   |ub_hotkey_open_item_in_current_view|
+                   |ub_hotkey_open_item_in_splitted_view|
+                   |ub_hotkey_open_item_in_tabbed_view|
+                   |ub_hotkey_delete_item|
 
 2.0.1
     * Bugfix:  Uploading media files may fail on Windows.
