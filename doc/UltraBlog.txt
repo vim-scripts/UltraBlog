@@ -6,7 +6,7 @@
 Author:      Lenin Lee   lenin.lee at gmail dot com       *UltraBlog_Author*
 URL:         http://sinolog.it/?p=1894                    *UltraBlog_URL*
 Description: Ultimate vim blogging plugin.                |UltraBlog_Motivation|
-Version:     2.1.0                                        |UltraBlog_History|
+Version:     2.2.0                                        |UltraBlog_History|
 License:     Copyleft                                     |UltraBlog_License|
 Contribute:  Please report any bugs or suggestions        |UltraBlog_Bugs|
              to the address above.                        |UltraBlog_Future|
@@ -132,13 +132,11 @@ All keymappings can be customized by setting some options, refer to
     opened to display it.
 
 :UBSave                                                               *:UBSave*
-:UBPageSave                                                       *:UBPageSave*
     Save modifications. After executing this command, the current buffer is 
     saved into database.
 
 :UBSend [draft\|publish\|private\|pending]                            *:UBSend*
-:UBPageSend [draft\|publish\|private\|pending]                    *:UBPageSend*
-    Post a post. If no parameter is given, UltraBlog will send the post to 
+    Post an item. If no parameter is given, UltraBlog will send the item to 
     blog and set it to be the value stored in the meta information area.
 
 :UBList [local [page_size] [page_no]|remote [latest_num]]             *:UBList*
@@ -366,6 +364,29 @@ ub_hotkey_delete_item                                    *ub_hotkey_delete_item*
 
     let ub_hotkey_delete_item='<del>'
 
+------------------------------------------------------------------------------
+
+ub_tmpl_img_url                                                *ub_tmpl_img_url*
+
+    Set the link template for images uploaded by |:UBUpload|. This string 
+    should be a template string valid for python to format printing, and every
+    placeholder must be among the keys of the dictionary returned by the
+    wordpress API method newMediaObject().
+
+    Structure of the dictionary:
+
+        {'url':'http://xxx/z.jpg', 'file':'z.jpg', 'type':'image/x-jpg'}
+
+    By default, the value is:
+        
+        let ub_tmpl_img_url="markdown###![%(file)s][]\n[%(file)s]:%(url)s"
+
+    As is illustrated, the template string should be appended with its syntax.
+    A tripple sharp sign '###' is used to devide the syntax and the template.
+    This is used to auto convert the template to the syntax the current buffer
+    has. If you don't need this, you can just simply ignore the appending
+    syntax and '###'.
+
 ==============================================================================
   Future                                                     *UltraBlog_Future*
 ==============================================================================
@@ -381,6 +402,12 @@ If you discover any bugs not listed here, please contact the |UltraBlog_Author|
 ==============================================================================
   History                                                   *UltraBlog_History*
 ==============================================================================
+
+2.2.0
+    * Change:  Merge :UBSave and :UBPageSave to |:UBSave|, merge :UBSend and 
+               :UBPageSend to |:UBSend|.
+    * Feature: Add an option |ub_tmpl_img_url| to customize a link template 
+               string for the image uploaded by |:UBUpload|.
 
 2.1.0
     * Change:  Increase the requirement to SQLAlchemy to version 0.7 or newer.

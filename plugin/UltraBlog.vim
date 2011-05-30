@@ -2,8 +2,8 @@
 " File:        UltraBlog.vim
 " Description: Ultimate vim blogging plugin that manages web logs
 " Author:      Lenin Lee <lenin.lee at gmail dot com>
-" Version:     2.1.0
-" Last Change: 2011-05-27
+" Version:     2.2.0
+" Last Change: 2011-05-30
 " License:     Copyleft.
 "
 " ============================================================================
@@ -26,21 +26,19 @@ function! ScopeCmpl(ArgLead, CmdLine, CursorPos)
   return "local\nremote\n"
 endfunction
 
-command! -nargs=0 UBSave exec('py ub_save_post()')
+command! -nargs=0 UBSave exec('py ub_save_item()')
+command! -nargs=0 UBPreview exec('py ub_preview()')
+command! -nargs=* -complete=custom,ScopeCmpl UBDel exec('py ub_del_item(<f-args>)')
+command! -nargs=? -complete=custom,StatusCmpl UBSend exec('py ub_send_item(<f-args>)')
 command! -nargs=? -complete=custom,SyntaxCmpl UBNew exec('py ub_new_post(<f-args>)')
-command! -nargs=? -complete=custom,StatusCmpl UBSend exec('py ub_send_post(<f-args>)')
 command! -nargs=* -complete=custom,ScopeCmpl UBList exec('py ub_list_posts(<f-args>)')
 command! -nargs=* -complete=custom,ScopeCmpl UBOpen exec('py ub_open_post(<f-args>)')
 command! -nargs=? -complete=custom,SyntaxCmpl UBThis exec('py ub_blog_this_as_post(<f-args>)')
-command! -nargs=0 UBPageSave exec('py ub_save_page()')
 command! -nargs=? -complete=custom,SyntaxCmpl UBPageNew exec('py ub_new_page(<f-args>)')
-command! -nargs=? -complete=custom,StatusCmpl UBPageSend exec('py ub_send_page(<f-args>)')
 command! -nargs=? -complete=custom,ScopeCmpl UBPageList exec('py ub_list_pages(<f-args>)')
 command! -nargs=* -complete=custom,ScopeCmpl UBPageOpen exec('py ub_open_page(<f-args>)')
 command! -nargs=? -complete=custom,SyntaxCmpl UBPageThis exec('py ub_blog_this_as_page(<f-args>)')
-command! -nargs=0 UBPreview exec('py ub_preview()')
 command! -nargs=1 -complete=file UBUpload exec('py ub_upload_media(<f-args>)')
-command! -nargs=* -complete=custom,ScopeCmpl UBDel exec('py ub_del_post(<f-args>)')
 command! -nargs=* -complete=custom,SyntaxCmpl UBConv exec('py ub_convert(<f-args>)')
 
 " Clear undo history
@@ -224,7 +222,7 @@ def ub_new_page(syntax='markdown'):
 
     page_meta_data = dict(\
             id = str(0),
-            page_id = str(0),
+            post_id = str(0),
             title = '',
             slug = '',
             status = 'draft')
@@ -266,7 +264,7 @@ def _ub_fill_page_meta_data(meta_dict):
     meta_text = \
 """<!--
 $id:              %(id)s
-$page_id:         %(page_id)s
+$post_id:         %(post_id)s
 $title:           %(title)s
 $slug:            %(slug)s
 $status:          %(status)s
@@ -315,6 +313,17 @@ def _ub_get_blog_settings():
     return cfg
 
 @__ub_exception_handler
+def ub_save_item():
+    '''Save the current buffer to local database
+    '''
+    if ub_is_view('post_edit'):
+        ub_save_post()
+    elif ub_is_view('page_edit'):
+        ub_save_page()
+    else:
+        raise UBException('Invalid view !')
+
+@__ub_exception_handler
 def ub_save_post():
     '''Save the current buffer to local database
     '''
@@ -355,7 +364,6 @@ def ub_save_post():
     sess.add(post)
     sess.commit()
 
-    meta_dict = _ub_get_post_meta_data()
     meta_dict['id'] = post.id
     _ub_fill_post_meta_data(meta_dict)
 
@@ -385,7 +393,7 @@ def ub_save_page():
     syntax = vim.eval('&syntax')
 
     id = ub_get_meta('id')
-    page_id = ub_get_meta('page_id')
+    post_id = ub_get_meta('post_id')
     if id is None:
         page = Post()
         page.type = 'page'
@@ -394,7 +402,7 @@ def ub_save_page():
 
     meta_dict = _ub_get_page_meta_data()
     page.content = "\n".join(vim.current.buffer[len(meta_dict)+2:]).decode(enc)
-    page.post_id = page_id
+    page.post_id = post_id
     page.title = ub_get_meta('title').decode(enc)
     page.slug = ub_get_meta('slug').decode(enc)
     page.status = ub_get_meta('status').decode(enc)
@@ -402,7 +410,6 @@ def ub_save_page():
     sess.add(page)
     sess.commit()
 
-    meta_dict = _ub_get_page_meta_data()
     meta_dict['id'] = page.id
     _ub_fill_page_meta_data(meta_dict)
 
@@ -472,13 +479,13 @@ def _ub_get_page_meta_data():
     id = ub_get_meta('id')
     if id is None:
         id = 0
-    page_id = ub_get_meta('page_id')
-    if page_id is None:
-        page_id = 0
+    post_id = ub_get_meta('post_id')
+    if post_id is None:
+        post_id = 0
 
     return dict(\
         id = id,
-        page_id = page_id,
+        post_id = post_id,
         title = ub_get_meta('title'),
         slug = ub_get_meta('slug'),
         status = ub_get_meta('status')
@@ -547,6 +554,17 @@ def ub_send_post(status=None):
         ub_save_post()
 
 @__ub_exception_handler
+def ub_send_item(status=None):
+    '''Send the current item to the blog
+    '''
+    if ub_is_view('post_edit'):
+        ub_send_post(status)
+    elif ub_is_view('page_edit'):
+        ub_send_page(status)
+    else:
+        raise UBException('Invalid view !')
+
+@__ub_exception_handler
 def ub_send_page(status=None):
     '''Send the current page to the blog
     '''
@@ -575,16 +593,16 @@ def ub_send_page(status=None):
         page_status = status
     )
 
-    page_id = ub_get_meta('page_id')
-    if page_id is None:
-        page_id = api.metaWeblog.newPost('', cfg['login_name'], cfg['password'], page, publish)
+    post_id = ub_get_meta('post_id')
+    if post_id is None:
+        post_id = api.metaWeblog.newPost('', cfg['login_name'], cfg['password'], page, publish)
         msg = "Page sent as %s !" % status
     else:
-        api.metaWeblog.editPost(page_id, cfg['login_name'], cfg['password'], page, publish)
+        api.metaWeblog.editPost(post_id, cfg['login_name'], cfg['password'], page, publish)
         msg = "Page sent as %s !" % status
     sys.stdout.write(msg)
 
-    ub_set_meta('page_id', page_id)
+    ub_set_meta('post_id', post_id)
     ub_set_meta('status', status)
 
     saveit = ub_get_option('ub_save_after_sent')
@@ -832,7 +850,7 @@ def ub_list_remote_pages():
     sess = Session()
     pages = api.wp.getPages('', cfg['login_name'], cfg['password'])
     for page in pages:
-        local_page = sess.query(Post).filter(Post.post_id==page['page_id']).filter(Post.type=='page').first()
+        local_page = sess.query(Post).filter(Post.post_id==page['post_id']).filter(Post.type=='page').first()
         if local_page is None:
             page['id'] = 0
         else:
@@ -844,7 +862,7 @@ def ub_list_remote_pages():
     enc = vim.eval('&encoding')
     vim.current.buffer[0] = "==================== Blog Pages ===================="
     tmpl = ub_get_list_template()
-    vim.current.buffer.append([(tmpl % (page['id'],page['page_id'],page['page_status'],page['title'])).encode(enc) for page in pages])
+    vim.current.buffer.append([(tmpl % (page['id'],page['post_id'],page['page_status'],page['title'])).encode(enc) for page in pages])
 
     vim.command("map <buffer> "+ub_get_option('ub_hotkey_open_item_in_current_view')+" :call UBOpenItemUnderCursor('cur')<cr>")
     vim.command("map <buffer> "+ub_get_option('ub_hotkey_open_item_in_splitted_view')+" :call UBOpenItemUnderCursor('split')<cr>")
@@ -929,14 +947,14 @@ def ub_open_local_page(id, view_type=None):
     if page is None:
         raise UBException('No page found !')
 
-    page_id = page.post_id
-    if page_id is None:
-        page_id = 0
+    post_id = page.post_id
+    if post_id is None:
+        post_id = 0
 
     enc = vim.eval('&encoding')
     page_meta_data = dict(\
             id = page.id,
-            page_id = page_id,
+            post_id = post_id,
             title = page.title.encode(enc),
             slug = page.slug.encode(enc),
             status = page.status.encode(enc))
@@ -1043,7 +1061,7 @@ def ub_open_remote_page(id, view_type=None):
     enc = vim.eval('&encoding')
     page_meta_data = dict(\
             id = id,
-            page_id = page.post_id,
+            post_id = page.post_id,
             title = page.title.encode(enc),
             slug = page.slug.encode(enc),
             status = page.status.encode(enc))
@@ -1069,12 +1087,12 @@ def _ub_list_del_post(scope='local'):
     info = vim.current.line.split()
     if len(info)>=3:
         if info[0].isdigit() and int(info[0])>0:
-            ub_del_post(int(info[0]),'local')
+            ub_del_item(int(info[0]),'local')
         if info[1].isdigit() and int(info[1])>0:
-            ub_del_post(int(info[1]),'remote')
+            ub_del_item(int(info[1]),'remote')
 
 @__ub_exception_handler
-def ub_del_post(id, scope='local'):
+def ub_del_item(id, scope='local'):
     '''Delete post or page
     '''
     # Check prerequesites
@@ -1154,7 +1172,11 @@ def ub_upload_media(file_path):
     result = api.metaWeblog.newMediaObject('', cfg['login_name'], cfg['password'],
         dict(name=os.path.basename(file_path), type=file_type, bits=bin_data))
 
-    vim.current.range.append(result['url'])
+    img_tmpl_info = ub_get_option('ub_tmpl_img_url', True)
+    img_url = img_tmpl_info['tmpl'] % result
+    syntax = vim.eval('&syntax')
+    img_url = _ub_convert_str(img_url, img_tmpl_info['syntax'], syntax)
+    vim.current.range.append(img_url.split("\n"))
 
 @__ub_exception_handler
 def ub_blog_this(syntax=None, type='post'):
@@ -1191,13 +1213,27 @@ def ub_convert(to_syntax, from_syntax=None, literal=False):
     ub_check_syntax(from_syntax)
 
     content = _ub_get_content()
+    enc = vim.eval('&encoding')
+    new_content = _ub_convert_str(content, from_syntax, to_syntax, enc)
 
-    if from_syntax == to_syntax:
+    if literal == True:
+        return new_content
+    else:
+        _ub_set_content(new_content.split("\n"))
+        vim.command('setl syntax=%s' % to_syntax)
+
+@__ub_exception_handler
+def _ub_convert_str(content, from_syntax, to_syntax, encoding=None):
+    if from_syntax == to_syntax \
+        or not ub_is_valid_syntax(from_syntax) \
+        or not ub_is_valid_syntax(to_syntax):
         return content
 
-    enc = vim.eval('&encoding')
     if from_syntax == 'markdown' and to_syntax == 'html':
-        new_content = markdown.markdown(content.decode(enc)).encode(enc)
+        if encoding is not None:
+            new_content = markdown.markdown(content.decode(encoding)).encode(encoding)
+        else:
+            new_content = markdown.markdown(content)
     else:
         cmd_parts = []
         cmd_parts.append(ub_get_option('ub_converter_command'))
@@ -1210,12 +1246,7 @@ def ub_convert(to_syntax, from_syntax=None, literal=False):
         import subprocess
         p = subprocess.Popen(cmd_parts, stdin=subprocess.PIPE, stdout=subprocess.PIPE)
         new_content = p.communicate(content)[0].replace("\r\n", "\n")
-
-    if literal == True:
-        return new_content
-    else:
-        _ub_set_content(new_content.split("\n"))
-        vim.command('setl syntax=%s' % to_syntax)
+    return new_content
 
 @__ub_exception_handler
 def ub_blog_this_as_post(syntax=None):
@@ -1230,7 +1261,7 @@ def ub_is_view(view_name):
     '''
     return vim.eval("exists('b:ub_view_name')")=='1' and vim.eval('b:ub_view_name')==view_name
 
-def ub_get_option(opt):
+def ub_get_option(opt, deal=False):
     '''Get the value of an UltraBlog option
     '''
     if vim.eval('exists("%s")' % opt) == '1':
@@ -1255,8 +1286,21 @@ def ub_get_option(opt):
         val = '<c-pagedown>'
     elif opt == 'ub_hotkey_pageup':
         val = '<c-pageup>'
+    elif opt == 'ub_tmpl_img_url':
+        val = "markdown###![%(file)s][]\n[%(file)s]:%(url)s"
     else:
         val = None
+
+    if deal:
+        if opt == 'ub_tmpl_img_url':
+            tmp = val.split('###')
+            val = {'tmpl':'', 'syntax':''}
+            if len(tmp) == 2:
+                val['syntax'] = tmp[0]
+                val['tmpl'] = tmp[1]
+            else:
+                val['syntax'] = ''
+                val['tmpl'] = tmp[0]
 
     return val
 
@@ -1331,6 +1375,11 @@ def ub_set_mode():
     editor_mode = ub_get_option('ub_editor_mode')
     if editor_mode is not None and editor_mode.isdigit() and int(editor_mode) == 1:
         ub_init()
+
+def ub_is_valid_syntax(syntax):
+    '''Check if the given parameter is one of the supported syntaxes
+    '''
+    return ['markdown', 'html', 'rst', 'latex', 'textile'].count(syntax) == 1
 
 @__ub_exception_handler
 def ub_init():
