@@ -16,19 +16,19 @@ Refer to the plugin's page for detail information:
 
 http://sinolog.it/?p=1894
 
+For the usage of templates, go to:
+
+http://sinolog.it/?p=2063
+
 *Commands:*
 
-:UBList [local|remote]
-:UBNew [markdown|html|rst|textile|latex]
-:UBOpen [local|remote] [id]
+:UBNew [item [syntax/template_name]]
+:UBPreview [status/template name]
 :UBSave
-:UBSend [draft|publish|private|pending]
-:UBPageList [local|remote]
-:UBPageNew [markdown|html|rst|textile|latex]
-:UBPageOpen {id} [local|remote]
+:UBSend [status]
+:UBList [item [scope [page_size [page_no]]]]
+:UBOpen {item} {post_id/template_name} [scope]
+:UBDel {item} {post_id/template_name} [scope]
 :UBUpload {file_path}
-:UBDel {id} [local|remote]
-:UBPreview
-:UBThis [markdown|html|rst|textile|latex]
-:UBPageThis [markdown|html|rst|textile|latex]
+:UBThis [item [syntax]]
 :UBConv {to_syntax} [from_syntax]

@@ -6,7 +6,7 @@
 Author:      Lenin Lee   lenin.lee at gmail dot com       *UltraBlog_Author*
 URL:         http://sinolog.it/?p=1894                    *UltraBlog_URL*
 Description: Ultimate vim blogging plugin.                |UltraBlog_Motivation|
-Version:     2.2.0                                        |UltraBlog_History|
+Version:     2.3.0                                        |UltraBlog_History|
 License:     Copyleft                                     |UltraBlog_License|
 Contribute:  Please report any bugs or suggestions        |UltraBlog_Bugs|
              to the address above.                        |UltraBlog_Future|
@@ -16,9 +16,12 @@ Contribute:  Please report any bugs or suggestions        |UltraBlog_Bugs|
 ==============================================================================
 
              1. Motivation.................|UltraBlog_Motivation|
-             2. Operation..................|UltraBlog_Operation|
+             2. Concepts...................|UltraBlog_Concepts|
                 2.1 Modes..................|UltraBlog_Modes|
-                2.2 Scopes.................|UltraBlog_Scopes|
+                2.2 Items..................|UltraBlog_Items|
+                2.3 Syntaxes...............|UltraBlog_Syntaxes|
+                2.4 Scopes.................|UltraBlog_Scopes|
+                2.5 Status.................|UltraBlog_Statuses|
              3. Prerequisites..............|UltraBlog_Prerequisites|
              4. Keymaps....................|UltraBlog_Keymaps|
              5. Commands...................|UltraBlog_Commands|
@@ -54,7 +57,7 @@ copies after modifying the local Markdown source files with other Vim blogging
 plugins. 
 
 ==============================================================================
-  Operation                                               *UltraBlog_Operation*
+  Concepts                                                  *UltraBlog_Concepts*
 ==============================================================================
 
 UltraBlog.vim makes life easier while writing or updating blogs. It stores
@@ -62,23 +65,74 @@ posts/pages in a local SQLite database. You can also set it to editor mode, in
 which UltraBlog.vim does not store data locally, just like other Vim blogging 
 scripts.
 
+------------------------------------------------------------------------------
+
 By default, UltraBlog.vim is in client mode. You can set it to use editor mode
 by adding the fallowing line to the vimrc file:
 
-Modes                                                          *UltraBlog_Modes*
+  Modes                                                        *UltraBlog_Modes*
 
     let ub_editor_mode = 1
 
-To determine whether to operate on local data or remote data, UltraBlog.vim 
-provides tow scopes:
+------------------------------------------------------------------------------
 
-Scopes                                                        *UltraBlog_Scopes*
+  Items                                                        *UltraBlog_Items*
 
-    local
-        Manage posts/pages stored in a local SQLite database.
+Currently, UltraBlog.vim manages three items: post, page and tmpl. "tmpl" 
+is the shorthand of "template".
 
-    remote
-        Manage posts/pages in the blog.
+                                                            *UltraBlog_Template*
+
+Templates are used to preview the current post/page in the browser locally.
+This feature is a reparation for the remote previewing, due to the limit of
+the API, users cannot send a post to Wordpress as draft and preview it without
+affecting the post status if the post has been published.
+
+With templates, users can preview posts/pages directly in the browser in a 
+pre-defined style. They can create as many templates as they like and
+customize the look with CSS and HTML, or even Javascript.
+
+Templates should be formatted as a valid python template string, that is, use
+the following avaliable placeholders and escape any literal '%' with another 
+'%':
+
+    %(title)s
+        The title of the current post/page.
+
+    %(content)s
+        The content of the current post/page.
+
+    %%
+        A literal '%'.
+
+There is a default template in the database, whose name is 'default', which
+can be used as an example of template.
+
+Users can specify the default template to use with the option
+|ub_default_template|.
+
+------------------------------------------------------------------------------
+
+  Syntaxes                                                  *UltraBlog_Syntaxes*
+
+The syntaxes supported by UltraBlog.vim currently are:
+
+    markdown, html, rst, textile, latex.
+
+------------------------------------------------------------------------------
+
+  Statuses                                                  *UltraBlog_Statuses*
+
+The available statuses are:
+
+    publish, private, draft, pending.
+
+------------------------------------------------------------------------------
+
+  Scopes                                                      *UltraBlog_Scopes*
+
+Scopes tells UltraBlog.vim to operate on items in which place, "local" stands 
+for items stored in the database, and "remote" stands for the blog.
 
 ==============================================================================
   Prerequisites                                        *UltraBlog_Prerequisites*
@@ -120,28 +174,57 @@ All keymappings can be customized by setting some options, refer to
   Commands                                                 *UltraBlog_Commands*
 ==============================================================================
 
-:UBNew [markdown\|html\|rst\|textile\|latex]                            *:UBNew*
-:UBPageNew [markdown\|html\|rst\|textile\|latex]                    *:UBPageNew*
-    Create a new post. If no parameter is given, UltraBlog will consider that 
-    you want to use markdown syntax. All categories are pulled down from your 
-    blog and you just need to delete the undesired ones.
+:UBNew [item [syntax/template_name]]                                    *:UBNew*
+    Create a new item.
 
-:UBPreview                                                         *:UBPreview*
-    Preview changes. You do not have to care for which syntax you use, markdown 
-    source will be translated into html automatically before a browser window 
-    opened to display it.
+    For the first parameter, refer to |UltraBlog_Items|. The default value is
+    "post".
+
+    If "item" is either "post" or "page", the second parameter must be a syntax 
+    name, refer to |UltraBlog_Syntaxes|. The default value is "markdown".
+
+    If "item" is "tmpl", the second parameter should be the name of the new 
+    template.
+
+:UBPreview [status/template name]                                   *:UBPreview*
+    Preview the current buffer.
+
+    If any of the |UltraBlog_Statuses| is given, the current buffer will be sent
+    to the blog and then opened in the browser with a parameter "preview" 
+    appended to the URL.
+
+    If the given parameter is not a post status, a pre-defined template whose
+    name is the same with the parameter will be used to preview the buffer
+    locally.
+
+    If none is given, the default template is used.
+    
+    You do not have to care for which syntax you use, markdown source will be 
+    translated into html automatically before a browser window is opened to 
+    display it.
 
 :UBSave                                                               *:UBSave*
     Save modifications. After executing this command, the current buffer is 
     saved into database.
 
-:UBSend [draft\|publish\|private\|pending]                            *:UBSend*
-    Post an item. If no parameter is given, UltraBlog will send the item to 
-    blog and set it to be the value stored in the meta information area.
+:UBSend [status]                                                      *:UBSend*
+    Post an item. If no parameter is given, UltraBlog.vim will send the item 
+    to blog and set it to be the value stored in the meta information area.
 
-:UBList [local [page_size] [page_no]|remote [latest_num]]             *:UBList*
-:UBPageList [local|remote]                                        *:UBPageList*
-    List posts.
+    Refer to |UltraBlog_Statuses|.
+
+:UBList [item [scope [page_size [page_no]]]]                          *:UBList*
+    List items.
+
+    Refer to |UltraBlog_Items| for the first parameter. The default value of 
+    this parameter is "post".
+
+    The second parameter "scope" is only available when "item" is either 
+    "post" or "page". Refer to |UltraBlog_Scopes|.
+
+    "page_size" and "page_no" are both for the situation when "item" is "post"
+    and "scope" is "local". The former stands for how many item will be listed
+    a page. The latter stands for the page number.
 
     For example:
 
@@ -151,54 +234,63 @@ All keymappings can be customized by setting some options, refer to
     have not been posted to blog are listed before the posted ones, and there 
     are |ub_local_pagesize| posts a page.
 
-    :UBList local 20 3
+    :UBList post local 20 3
 
-    This command lists the third page of local posts, 20 posts a page. As you see, 
-    you can use this command to scroll forward or back between pages. As a matter 
-    of fact, there are two key mappings within local post list:
+    This command lists the third page of local posts, 20 posts a page. As you 
+    see, you can use this command to scroll forward or back between pages. As 
+    a matter of fact, there are two key mappings within local post list:
 
       * CTRL+PageDown
       * CTRL+PageUp
 
-    :UBList remote 50
+    :UBList post remote 50
 
     This command lists the latest 50 posts in the blog.
 
-    Pressing the ENTER key in a remote post list will open the post under cursor 
-    and save it to the local database if it is not in it, otherwise, the local 
-    copy will be opened instead of the remote one. This enables users to modify 
-    markdown source and update the remote post.
+    Pressing the ENTER key in a remote post list will open the post under 
+    cursor and save it to the local database if it is not in it, otherwise, 
+    the local copy will be opened instead of the remote one. This enables 
+    users to modify markdown source and update the remote post.
 
     The remote post list doesn't support paging.
 
-:UBOpen {id} [local|remote]                                           *:UBOpen*
-:UBPageOpen {id} [local|remote]                                   *:UBPageOpen*
-    Open a post. If no scope (local or remote) is given, UltraBlog will try to 
-    open a local post whose id is the one specified. Otherwise, a post in the 
-    given scope with the id will be opened.
+:UBOpen {item} {post_id/template_name} [scope]                        *:UBOpen*
+    Open an item. 
 
-:UBDel {id} [local|remote]                                             *:UBDel*
-    Delete a post or page. Refer |UBOpen| for the usage of these options.
-    You can also delete posts from the post list by pressing the DELETE button on 
-    the target post. In a local post list, if the post to be deleted has been 
-    posted to blog, a confirmation will be prompted for you to decide whether 
-    to delete the remote copy cascadly.
+    For the first parameter, refer to |UltraBlog_Items|.
+
+    If "item" is either "post" or "page", the second parameter should be value
+    of its id. If it's "tmpl", the name.
+
+    For "scope", refer to |UltraBlog_Scopes|. The default value is "local".
+
+:UBDel {item} {post_id/template_name} [scope]                          *:UBDel*
+    Delete an item.
+    
+    Refer to |UBOpen| for the usage of these options.
+
+    You can also delete items in the list by pressing the DELETE button on 
+    the target. In a local post list, if the post to be deleted has been 
+    posted to the blog, a confirmation will be prompted for you to decide 
+    whether to delete the remote copy cascadly.
 
 :UBUpload {file_path}                                               *:UBUpload*
-    Upload media. This command can only be executed in a post edit view, and the 
-    URL of the uploaed file will be appended in that buffer.
+    Upload media. This command can only be executed in a post edit view, and 
+    the URL of the uploaed file will be appended in that buffer.
 
-:UBThis [markdown\|html\|rst\|textile\|latex]                         *:UBThis*
-:UBPageThis [markdown\|html\|rst\|textile\|latex]                 *:UBPageThis*
+:UBThis [item [syntax]]                                               *:UBThis*
     Create a new post or page which is filled with content in the current 
-    buffer. If no parameter is specified, the syntax in the current buffer is
-    used, if no syntax has been set to the current buffer, then 'markdown' is
-    used.
+    buffer. 
+    
+    If no parameter is specified, the first parameter will be default to "post".
+    For the second one, the syntax in the current buffer is used, if no syntax 
+    has been set to the current buffer, then "markdown" is used.
 
 :UBConv {to_syntax} [from_syntax]                                      *:UBConv*
     Convert the current buffer from 'from_syntax' to 'to_syntax'.
-    The available syntaxes are Markdown, HTML, reStructuredText, Textile and
-    LaTeX.
+
+    Refer to |UltraBlog_Syntaxes|.
+
     If you only need to convert from Markdown to HTML, only python-markdown or
     python-markdown2 module is required. For other conversion scenarios, you 
     must install pacdoc or use the options: |ub_converter_command|, 
@@ -387,6 +479,17 @@ ub_tmpl_img_url                                                *ub_tmpl_img_url*
     has. If you don't need this, you can just simply ignore the appending
     syntax and '###'.
 
+------------------------------------------------------------------------------
+
+ub_default_template                                        *ub_default_template*
+
+    Set the default template to be used to preview the current buffer in the 
+    browser.
+
+    By default, the value is:
+
+    let ub_default_template="default"
+
 ==============================================================================
   Future                                                     *UltraBlog_Future*
 ==============================================================================
@@ -402,6 +505,17 @@ If you discover any bugs not listed here, please contact the |UltraBlog_Author|
 ==============================================================================
   History                                                   *UltraBlog_History*
 ==============================================================================
+
+2.3.0
+    * Feature: Preview posts/pages locally with pre-defined templates,
+               template related operations and management.
+    * Feature: Preview posts/pages after sending them to the blog.
+    * Change:  Merge :UBPageNew to |:UBNew|, merge :UBPageOpen to |:UBOpen|, 
+               merge :UBPageList to |:UBList|, merge :UBPageThis to |:UBThis|.
+    * Bugfix:  The remote page list will raise an error when openned due to a
+               change made in last version.
+    * Bugfix:  The post/page list will raise an error when an item is deleted
+               in it, caused by a change made in last version.
 
 2.2.0
     * Change:  Merge :UBSave and :UBPageSave to |:UBSave|, merge :UBSend and 
@@ -439,12 +553,12 @@ If you discover any bugs not listed here, please contact the |UltraBlog_Author|
                posts/pages to database right after they are sent to blogs.
 
 1.4
-    * Feature: Add two commands: |:UBThis| and |:UBPageThis|, to create a new post 
+    * Feature: Add two commands: |:UBThis| and :UBPageThis, to create a new post 
                or page with content in the current buffer.
 
 1.3
     * Feature: Record post statuses, post them in their recorded statuses when 
-               omit parameters for |:UBSend| and |:UBPageSend|.
+               omit parameters for |:UBSend| and :UBPageSend.
     * Feature: Display post/page status in post/page list, add an option 
                |ub_list_col3_width| to set its width.
     * Feature: Extend statuses to support private, pending and draft.
