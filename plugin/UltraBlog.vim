@@ -2,8 +2,8 @@
 " File:        UltraBlog.vim
 " Description: Ultimate vim blogging plugin that manages web logs
 " Author:      Lenin Lee <lenin.lee at gmail dot com>
-" Version:     2.3.0
-" Last Change: 2011-06-10
+" Version:     2.3.1
+" Last Change: 2011-06-15
 " License:     Copyleft.
 "
 " ============================================================================
@@ -823,6 +823,17 @@ def ub_save_template():
     vim.command('setl nomodified')
 
 @__ub_exception_handler
+def ub_send_item(status=None):
+    '''Send the current item to the blog
+    '''
+    if ub_is_view('post_edit'):
+        ub_send_post(status)
+    elif ub_is_view('page_edit'):
+        ub_send_page(status)
+    else:
+        raise UBException('Invalid view !')
+
+@__ub_exception_handler
 def ub_send_post(status=None):
     '''Send the current buffer to the blog
     '''
@@ -862,23 +873,14 @@ def ub_send_post(status=None):
         msg = "Post sent as %s !" % status
     sys.stdout.write(msg)
 
-    ub_set_meta('post_id', post_id)
-    ub_set_meta('status', status)
+    if post_id != ub_get_meta('post_id'):
+        ub_set_meta('post_id', post_id)
+    if status != ub_get_meta('status'):
+        ub_set_meta('status', status)
 
     saveit = ub_get_option('ub_save_after_sent')
     if saveit is not None and saveit.isdigit() and int(saveit) == 1:
         ub_save_post()
-
-@__ub_exception_handler
-def ub_send_item(status=None):
-    '''Send the current item to the blog
-    '''
-    if ub_is_view('post_edit'):
-        ub_send_post(status)
-    elif ub_is_view('page_edit'):
-        ub_send_page(status)
-    else:
-        raise UBException('Invalid view !')
 
 @__ub_exception_handler
 def ub_send_page(status=None):
@@ -918,8 +920,10 @@ def ub_send_page(status=None):
         msg = "Page sent as %s !" % status
     sys.stdout.write(msg)
 
-    ub_set_meta('post_id', post_id)
-    ub_set_meta('status', status)
+    if post_id != ub_get_meta('post_id'):
+        ub_set_meta('post_id', post_id)
+    if status != ub_get_meta('status'):
+        ub_set_meta('status', status)
 
     saveit = ub_get_option('ub_save_after_sent')
     if saveit is not None and saveit.isdigit() and int(saveit) == 1:
@@ -1124,10 +1128,6 @@ def ub_list_remote_posts(page_size=None):
     if page_size is None:
         page_size = ub_get_option('ub_remote_pagesize')
     page_size = int(page_size)
-    page_no = int(page_no)
-    if page_no<1 or page_size<1:
-        return
-
     if page_size<1:
         return
 
