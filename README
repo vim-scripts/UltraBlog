@@ -4,7 +4,7 @@ The biggest difference between UltraBlog.vim and other Vim blogging scripts is t
 
 You will find UltraBlog.vim very useful when you write posts in some light weight markup languages, such as Markdown, LaTeX, reStructuredText and Textile. With posts/pages stored locally, you can edit them in any light weight markup language at any time even after a long time when they were published, and update the online copies in HTML syntax. 
 
-This is the exact original intention for which I wrote UltraBlog.vim. After years of blogging, I've formed the habbit that writing posts in Markdown syntax to save time, and I think it is good to always keep my posts updated, rather than post it and forget it. But I found it hard to update the posted copies after modifying the local Markdown source files with other Vim blogging plugins. 
+This is the exact original intention for which I wrote UltraBlog.vim. After years of blogging, I've formed the habbit of writing posts in Markdown syntax to save time, and I think it is good to always keep my posts updated, rather than post it and forget it. But I found it hard to update the posted copies after modifying the local Markdown source files with other Vim blogging plugins except UltraBlog.vim.
 
 Though it is packaged as a vimball and with a filename as UltraBlog.vba, I prefer UltraBlog.vim as the plugins name for that .vim looks very hacker.
 
@@ -20,15 +20,26 @@ For the usage of templates, go to:
 
 http://sinolog.it/?p=2063
 
+*Features:*
+
+    * Event-driven system.
+    * Multiple syntax support: Markdown, HTML, reStructuredText, LaTeX, Textile.
+    * Editor mode and client mode.
+    * Data is stored in a local SQLite database in client mode.
+    * Context search with keywords highlighting.
+    * Templates for previewing posts.
+
 *Commands:*
 
-:UBNew [item [syntax/template_name]]
-:UBPreview [status/template name]
-:UBSave
-:UBSend [status]
-:UBList [item [scope [page_size [page_no]]]]
-:UBOpen {item} {post_id/template_name} [scope]
-:UBDel {item} {post_id/template_name} [scope]
-:UBUpload {file_path}
-:UBThis [item [syntax]]
-:UBConv {to_syntax} [from_syntax]
+    * :UBNew [item [syntax/template_name]]
+    * :UBPreview [status/template name]
+    * :UBSave
+    * :UBSend [status]
+    * :UBList [item [scope [page_size [page_no]]]]
+    * :UBOpen {item} {post_id/template_name} [scope]
+    * :UBDel {item} {post_id/template_name} [scope]
+    * :UBUpload {file_path}
+    * :UBThis [item [syntax]]
+    * :UBConv {to_syntax} [from_syntax]
+    * :UBRefresh
+    * :UBFind keyword1 [keyword2 ...]
