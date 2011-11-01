@@ -4,21 +4,21 @@ class UBEventQueue:
     queue = []
     listeners = []
 
-    @staticmethod
-    def fireEvent(evt):
-        UBEventQueue.queue.append(evt)
+    @classmethod
+    def fireEvent(cls, evt):
+        cls.queue.append(evt)
 
-    @staticmethod
-    def processEvents():
-        for evt in UBEventQueue.queue:
-            for listener in UBEventQueue.listeners:
+    @classmethod
+    def processEvents(cls):
+        for evt in cls.queue:
+            for listener in cls.listeners:
                 if listener.isTarget(evt):
-                    UBEventQueue.queue.remove(evt)
+                    cls.queue.remove(evt)
                     listener.processEvent(evt)
 
-    @staticmethod
-    def registerListener(lsnr):
-        UBEventQueue.listeners.append(lsnr)
+    @classmethod
+    def registerListener(cls, lsnr):
+        cls.listeners.append(lsnr)
 
 if __name__ == '__main__':
     pass

@@ -1,6 +1,7 @@
 #!/usr/bin/env python
+# -*- encoding: utf-8 -*-
 
-import vim, xmlrpclib, webbrowser, sys, re, tempfile, os, mimetypes
+import vim, xmlrpclib, webbrowser, sys, re, tempfile, os, mimetypes, inspect, types
 from exceptions import *
 from db import *
 from util import *
@@ -12,15 +13,15 @@ def __ub_exception_handler(func):
         try:
             return func(*args,**kwargs)
         except UBException, e:
-            sys.stderr.write(str(e))
+            print >> sys.stderr,str(e)
         except xmlrpclib.Fault, e:
-            sys.stderr.write("xmlrpc error: %s" % e.faultString.encode("utf-8"))
+            print >> sys.stderr,"xmlrpc error: %s" % e.faultString
         except xmlrpclib.ProtocolError, e:
-            sys.stderr.write("xmlrpc error: %s %s" % (e.url, e.errmsg))
+            print >> sys.stderr,"xmlrpc error: %s %s" % (e.url, e.errmsg)
         except IOError, e:
-            sys.stderr.write("network error: %s" % e)
+            print >> sys.stderr,"network error: %s" % e
         except Exception, e:
-            sys.stderr.write(str(e))
+            print >> sys.stderr,str(e)
     return __check
 
 def __ub_enc_check(func):
@@ -40,960 +41,79 @@ def __ub_enc_check(func):
     return __check
 
 @__ub_exception_handler
+def ub_list_items(item_type='post', scope='local', page_size=None, page_no=None):
+    ''' List items
+    '''
+    cmd = UBCmdList(item_type, scope, page_size, page_no)
+    cmd.execute()
+
+@__ub_exception_handler
 def ub_find(page_no, *keywords):
     ''' List posts/pages which match the keywords given
     '''
-    # Check prerequesites
-    __ub_check_prerequesites()
-
-    # Set editor mode if the corresponding option has been set
-    ub_set_mode()
-
-    page_size = int(ub_get_option('ub_search_pagesize'))
-    page_no = int(page_no)
-
-    if page_no<1 or page_size<1:
-        return
-
-    posts = []
-    tbl = Post.__table__
-    enc = vim.eval('&encoding')
-
-    conds = []
-    for keyword in keywords:
-        kwcond = []
-        kwcond.append(tbl.c.title.like('%%%s%%' % keyword.decode(enc)))
-        kwcond.append(tbl.c.content.like('%%%s%%' % keyword.decode(enc)))
-        conds.append(or_(*kwcond))
-
-    stmt = select([tbl.c.id,case([(tbl.c.post_id>0, tbl.c.post_id)], else_=0).label('post_id'),tbl.c.status,tbl.c.title],
-        and_(*conds)
-    ).limit(page_size).offset(page_size*(page_no-1)).order_by(tbl.c.status.asc(),tbl.c.post_id.desc())
-
-    conn = db.connect()
-    rslt = conn.execute(stmt)
-    while True:
-        row = rslt.fetchone()
-        if row is not None:
-            posts.append(row)
-        else:
-            break
-    conn.close()
-
-    if len(posts)==0:
-        sys.stderr.write('No more posts found !')
-        return
-
-    ub_wise_open_view('search_result_list')
-    vim.current.buffer[0] = "==================== Results (Page %d) ====================" % page_no
-    tmpl = ub_get_list_template()
-    vim.current.buffer.append([(tmpl % (post.id,post.post_id,post.status,post.title)).encode(enc) for post in posts])
-
-    vim.command("let b:page_no=%s" % page_no)
-    vim.command("let b:page_size=%s" % page_size)
-    vim.command("let b:ub_keywords=[%s]" % ','.join(["'%s'" % kw for kw in keywords]))
-    vim.command("map <buffer> "+ub_get_option('ub_hotkey_open_item_in_current_view')+" :py __ub_list_open_item('cur')<cr>")
-    vim.command("map <buffer> "+ub_get_option('ub_hotkey_open_item_in_splitted_view')+" :py __ub_list_open_item('split')<cr>")
-    vim.command("map <buffer> "+ub_get_option('ub_hotkey_open_item_in_tabbed_view')+" :py __ub_list_open_item('tab')<cr>")
-    vim.command("map <buffer> "+ub_get_option('ub_hotkey_delete_item')+" :py __ub_list_del_item()<cr>")
-    vim.command("map <buffer> "+ub_get_option('ub_hotkey_pagedown')+" :py ub_find(%d,%s)<cr>" % (page_no+1, ','.join(["'%s'" % kw for kw in keywords])))
-    vim.command("map <buffer> "+ub_get_option('ub_hotkey_pageup')+" :py ub_find(%d,%s)<cr>" % (page_no-1, ','.join(["'%s'" % kw for kw in keywords])))
-    vim.command('call UBClearUndo()')
-    vim.command('setl nomodified')
-    vim.command("setl nomodifiable")
-    vim.current.window.cursor = (2, 0)
-    vim.command("let @/='\\(%s\\)'" % '\\|'.join(keywords))
-    vim.command('setl hls')
+    cmd = UBCmdFind(page_no, *keywords)
+    cmd.execute()
 
 @__ub_exception_handler
 def ub_refresh_current_view():
     ''' Refresh current view
     '''
-    if ub_is_ubbuf('%'):
-        vname = ub_get_viewname('%')
-        if vname == 'search_result_list':
-            kws = ub_get_bufvar('ub_keywords')
-            pno = ub_get_bufvar('page_no')
-            ub_find(pno, *kws)
-        elif ub_is_view_of_type('list'):
-            vinfo = vname.split('_')
-            psize = ub_get_bufvar('page_size')
-            pno = ub_get_bufvar('page_no')
-            ub_list_items(vinfo[1], vinfo[0], psize, pno)
-        elif ub_is_view_of_type('edit'):
-            id = ub_get_meta('id')
-            id = (id is not None and id) or ub_get_meta('name')
-            if ub_is_id(id) or not ub_is_emptystr(id):
-                modified = '1'==vim.eval('&modified')
-                vim.command('setl nomodified')
-                vinfo = vname.split('_')
-                try:
-                    ub_open_item(vinfo[0], id, 'local')
-                except Exception, e:
-                    if modified is True:
-                        vim.command('setl modified')
-                    else:
-                        vim.command('setl nomodified')
-                    sys.stderr.write(str(e))
-            else:
-                raise UBException('Key of current buffer cannot be found !')
-        else:
-            sys.stderr.write('Not implemented !')
-            return
+    cmd = UBCmdRefresh()
+    cmd.execute()
 
 @__ub_exception_handler
 def ub_preview(tmpl=None):
     '''Preview the current buffer in a browser
     '''
-    if not ub_is_view('post_edit') and not ub_is_view('page_edit'):
-        raise UBException('Invalid view !')
-
-    prv_url = ''
-    enc = vim.eval('&encoding')
-
-    if tmpl in ['private', 'publish', 'draft']:
-        ub_send_item(tmpl)
-
-        if ub_is_view('page_edit'):
-            prv_url = "%s?pageid=%s&preview=true"
-        else:
-            prv_url = "%s?p=%s&preview=true"
-
-        prv_url = prv_url % (cfg.blogURL, ub_get_meta('post_id'))
-    else:
-        if tmpl is None:
-            tmpl = ub_get_option('ub_default_template')
-
-        sess = Session()
-        template = sess.query(Template).filter(Template.name==tmpl.decode(enc)).first()
-        sess.close()
-        if template is None:
-            raise UBException("Template '%s' is not found !" % tmpl)
-
-        tmpl_str = template.content.encode(enc)
-
-        draft = {}
-        draft['title'] = ub_get_meta('title')
-        draft['content'] = __ub_get_html()
-
-        tmpfile = tempfile.mktemp(suffix='.html')
-        fp = open(tmpfile, 'w')
-        fp.write(tmpl_str % draft)
-        fp.close()
-        prv_url = "file://%s" % tmpfile
-
-    webbrowser.open(prv_url)
+    cmd = UBCmdPreview(tmpl)
+    cmd.execute()
 
 @__ub_exception_handler
 def ub_save_item():
     '''Save the current buffer to local database
     '''
-    if ub_is_view('post_edit'):
-        ub_save_post()
-    elif ub_is_view('page_edit'):
-        ub_save_page()
-    elif ub_is_view('tmpl_edit'):
-        ub_save_template()
-    else:
-        raise UBException('Invalid view !')
-
-def ub_save_template():
-    '''Save the current template to local database
-    '''
-    # Check prerequesites
-    __ub_check_prerequesites()
-
-    # This function is valid only in 'tmpl_edit' buffers
-    if not ub_is_view('tmpl_edit'):
-        raise UBException('Invalid view !')
-
-    # Do not bother if the current buffer is not modified
-    if vim.eval('&modified')=='0':
-        return
-
-    # Set editor mode if the corresponding option has been set
-    ub_set_mode()
-
-    sess = Session()
-    enc = vim.eval('&encoding')
-    syntax = vim.eval('&syntax')
-    name = ub_get_meta('name').decode(enc)
-
-    # Check if the given name is a reserved word
-    ub_check_reserved_word(name)
-
-    tmpl = sess.query(Template).filter(Template.name==name).first()
-    if tmpl is None:
-        tmpl = Template()
-        tmpl.name = name
-
-    tmpl.description = ub_get_meta('description').decode(enc)
-    tmpl.content = "\n".join(vim.current.buffer[4:]).decode(enc)
-
-    sess.add(tmpl)
-    sess.commit()
-    sess.close()
-
-    vim.command('setl nomodified')
-    
-    UBEventQueue.fireEvent(UBTmplSaveEvent(name))
-    UBEventQueue.processEvents()
-
-def ub_save_post():
-    '''Save the current buffer to local database
-    '''
-    # Check prerequesites
-    __ub_check_prerequesites()
-
-    # This function is valid only in 'post_edit' buffers
-    if not ub_is_view('post_edit'):
-        raise UBException('Invalid view !')
-
-    # Do not bother if the current buffer is not modified
-    if vim.eval('&modified')=='0':
-        return
-
-    # Set editor mode if the corresponding option has been set
-    ub_set_mode()
-
-    sess = Session()
-    enc = vim.eval('&encoding')
-    syntax = vim.eval('&syntax')
-
-    id = ub_get_meta('id')
-    post_id = ub_get_meta('post_id')
-    if id is None:
-        post = Post()
-    else:
-        post = sess.query(Post).filter(Post.id==id).first()
-
-    meta_dict = __ub_get_post_meta_data()
-    post.content = "\n".join(vim.current.buffer[len(meta_dict)+2:]).decode(enc)
-    post.post_id = post_id
-    post.title = ub_get_meta('title').decode(enc)
-    post.categories = ub_get_meta('categories').decode(enc)
-    post.tags = ub_get_meta('tags').decode(enc)
-    post.slug = ub_get_meta('slug').decode(enc)
-    post.status = ub_get_meta('status').decode(enc)
-    post.syntax = syntax
-    sess.add(post)
-    sess.commit()
-    meta_dict['id'] = post.id
-    sess.close()
-
-    __ub_fill_meta_data(meta_dict)
-
-    vim.command('setl nomodified')
-    
-    UBEventQueue.fireEvent(UBPostSaveEvent(post.id))
-    UBEventQueue.processEvents()
-
-def ub_save_page():
-    '''Save the current page to local database
-    '''
-    # Check prerequesites
-    __ub_check_prerequesites()
-
-    # This function is valid only in 'page_edit' buffers
-    if not ub_is_view('page_edit'):
-        raise UBException('Invalid view !')
-
-    # Do not bother if the current buffer is not modified
-    if vim.eval('&modified')=='0':
-        return
-
-    # Set editor mode if the corresponding option has been set
-    ub_set_mode()
-
-    sess = Session()
-    enc = vim.eval('&encoding')
-    syntax = vim.eval('&syntax')
-
-    id = ub_get_meta('id')
-    post_id = ub_get_meta('post_id')
-    if id is None:
-        page = Post()
-        page.type = 'page'
-    else:
-        page = sess.query(Post).filter(Post.id==id).filter(Post.type=='page').first()
-
-    meta_dict = __ub_get_page_meta_data()
-    page.content = "\n".join(vim.current.buffer[len(meta_dict)+2:]).decode(enc)
-    page.post_id = post_id
-    page.title = ub_get_meta('title').decode(enc)
-    page.slug = ub_get_meta('slug').decode(enc)
-    page.status = ub_get_meta('status').decode(enc)
-    page.syntax = syntax
-    sess.add(page)
-    sess.commit()
-    meta_dict['id'] = page.id
-    sess.close()
-
-    __ub_fill_meta_data(meta_dict)
-
-    vim.command('setl nomodified')
-    
-    UBEventQueue.fireEvent(UBPostSaveEvent(page.id))
-    UBEventQueue.processEvents()
+    cmd = UBCmdSave()
+    cmd.execute()
 
 @__ub_exception_handler
 def ub_send_item(status=None):
     '''Send the current item to the blog
     '''
-    if ub_is_view('post_edit'):
-        ub_send_post(status)
-    elif ub_is_view('page_edit'):
-        ub_send_page(status)
-    else:
-        raise UBException('Invalid view !')
+    cmd = UBCmdSend(status)
+    cmd.execute()
 
 @__ub_exception_handler
-def ub_send_post(status=None):
-    '''Send the current buffer to the blog
-    '''
-    # Check prerequesites
-    __ub_check_prerequesites()
-
-    # This function is valid only in 'post_edit' buffers
-    if not ub_is_view('post_edit'):
-        raise UBException('Invalid view !')
-
-    # Set editor mode if the corresponding option has been set
-    ub_set_mode()
-
-    # Check parameter
-    if status is None:
-        status = ub_get_meta('status')
-    publish = ub_check_status(status)
-
-    post = dict(\
-        title = ub_get_meta('title'),
-        description = __ub_get_html(),
-        categories = [cat.strip() for cat in ub_get_meta('categories').split(',')],
-        mt_keywords = ub_get_meta('tags'),
-        wp_slug = ub_get_meta('slug'),
-        post_type = 'post',
-        post_status = status
-    )
-
-    post_id = ub_get_meta('post_id')
-    if post_id is None:
-        post_id = api.metaWeblog.newPost('', cfg.loginName, cfg.password, post, publish)
-        msg = "Post sent as %s !" % status
-    else:
-        api.metaWeblog.editPost(post_id, cfg.loginName, cfg.password, post, publish)
-        msg = "Post sent as %s !" % status
-    sys.stdout.write(msg)
-
-    UBEventQueue.fireEvent(UBPostSendEvent(post_id))
-
-    if post_id != ub_get_meta('post_id'):
-        ub_set_meta('post_id', post_id)
-    if status != ub_get_meta('status'):
-        ub_set_meta('status', status)
-
-    saveit = ub_get_option('ub_save_after_sent')
-    if saveit is not None and saveit.isdigit() and int(saveit) == 1:
-        ub_save_post()
-    
-    UBEventQueue.processEvents()
-
-@__ub_exception_handler
-def ub_send_page(status=None):
-    '''Send the current page to the blog
-    '''
-    # Check prerequesites
-    __ub_check_prerequesites()
-
-    # This function is valid only in 'page_edit' buffers
-    if not ub_is_view('page_edit'):
-        raise UBException('Invalid view !')
-
-    # Set editor mode if the corresponding option has been set
-    ub_set_mode()
-
-    # Check parameter
-    if status is None:
-        status = ub_get_meta('status')
-    publish = ub_check_status(status)
-
-    global cfg, api
-
-    page = dict(\
-        title = ub_get_meta('title'),
-        description = __ub_get_html(),
-        wp_slug = ub_get_meta('slug'),
-        post_type = 'page',
-        page_status = status
-    )
-
-    post_id = ub_get_meta('post_id')
-    if post_id is None:
-        post_id = api.metaWeblog.newPost('', cfg.loginName, cfg.password, page, publish)
-        msg = "Page sent as %s !" % status
-    else:
-        api.metaWeblog.editPost(post_id, cfg.loginName, cfg.password, page, publish)
-        msg = "Page sent as %s !" % status
-    sys.stdout.write(msg)
-
-    UBEventQueue.fireEvent(UBPostSendEvent(post_id))
-
-    if post_id != ub_get_meta('post_id'):
-        ub_set_meta('post_id', post_id)
-    if status != ub_get_meta('status'):
-        ub_set_meta('status', status)
-
-    saveit = ub_get_option('ub_save_after_sent')
-    if saveit is not None and saveit.isdigit() and int(saveit) == 1:
-        ub_save_page()
-    
-    UBEventQueue.processEvents()
-
-@__ub_exception_handler
-def ub_list_items(item_type='post', scope='local', page_size=None, page_no=None):
-    ub_check_item_type(item_type)
-
-    if item_type=='tmpl':
-        ub_list_templates()
-        return
-
-    ub_check_scope(scope)
-
-    if page_size is None:
-        page_size = ub_get_option("ub_%s_pagesize" % scope)
-    page_size = int(page_size)
-    if page_no is None:
-        page_no = 1
-    page_no = int(page_no)
-    if page_no<1 or page_size<1:
-        return
-
-    if item_type=='post':
-        if scope=='local':
-            ub_list_local_posts(page_no, page_size)
-        else:
-            ub_list_remote_posts(page_size)
-    else:
-        eval("ub_list_%s_pages()" % scope)
-
-@__ub_exception_handler
-def ub_list_local_posts(page_no=1, page_size=None):
-    '''List local posts stored in database
-    '''
-    # Check prerequesites
-    __ub_check_prerequesites()
-
-    if page_size is None:
-        page_size = ub_get_option('ub_local_pagesize')
-    page_size = int(page_size)
-    page_no = int(page_no)
-    if page_no<1 or page_size<1:
-        return
-
-    # Set editor mode if the corresponding option has been set
-    ub_set_mode()
-
-    posts = []
-
-    tbl = Post.__table__
-    ua = union_all(
-        select([select([tbl.c.id,case([(tbl.c.post_id>0, tbl.c.post_id)], else_=0).label('post_id'),tbl.c.status,tbl.c.title])\
-            .where(tbl.c.post_id==None).where(tbl.c.type=='post').order_by(tbl.c.id.desc())]),
-        select([select([tbl.c.id,case([(tbl.c.post_id>0, tbl.c.post_id)], else_=0).label('post_id'),tbl.c.status,tbl.c.title])\
-            .where(tbl.c.post_id!=None).where(tbl.c.type=='post').order_by(tbl.c.post_id.desc())])
-    )
-    stmt = select([ua]).limit(page_size).offset(page_size*(page_no-1))
-
-    conn = db.connect()
-    rslt = conn.execute(stmt)
-    while True:
-        row = rslt.fetchone()
-        if row is not None:
-            posts.append(row)
-        else:
-            break
-    conn.close()
-
-    if len(posts)==0:
-        sys.stderr.write('No more posts found !')
-        return
-
-    ub_wise_open_view('local_post_list')
-    enc = vim.eval('&encoding')
-    vim.current.buffer[0] = "==================== Posts (Page %d) ====================" % page_no
-    tmpl = ub_get_list_template()
-    vim.current.buffer.append([(tmpl % (post.id,post.post_id,post.status,post.title)).encode(enc) for post in posts])
-
-    vim.command("let b:page_no=%s" % page_no)
-    vim.command("let b:page_size=%s" % page_size)
-    vim.command("map <buffer> "+ub_get_option('ub_hotkey_open_item_in_current_view')+" :py __ub_list_open_item('cur')<cr>")
-    vim.command("map <buffer> "+ub_get_option('ub_hotkey_open_item_in_splitted_view')+" :py __ub_list_open_item('split')<cr>")
-    vim.command("map <buffer> "+ub_get_option('ub_hotkey_open_item_in_tabbed_view')+" :py __ub_list_open_item('tab')<cr>")
-    vim.command("map <buffer> "+ub_get_option('ub_hotkey_delete_item')+" :py __ub_list_del_item()<cr>")
-    vim.command("map <buffer> "+ub_get_option('ub_hotkey_pagedown')+" :py ub_list_local_posts(%d,%d)<cr>" % (page_no+1,page_size))
-    vim.command("map <buffer> "+ub_get_option('ub_hotkey_pageup')+" :py ub_list_local_posts(%d,%d)<cr>" % (page_no-1,page_size))
-    vim.command('call UBClearUndo()')
-    vim.command('setl nomodified')
-    vim.command("setl nomodifiable")
-    vim.current.window.cursor = (2, 0)
-
-@__ub_exception_handler
-def ub_list_local_pages():
-    '''List local pages stored in database
-    '''
-    # Check prerequesites
-    __ub_check_prerequesites()
-
-    # Set editor mode if the corresponding option has been set
-    ub_set_mode()
-
-    pages = []
-
-    tbl = Post.__table__
-    ua = union_all(
-        select([select([tbl.c.id,case([(tbl.c.post_id>0, tbl.c.post_id)], else_=0).label('post_id'),tbl.c.status,tbl.c.title])\
-            .where(tbl.c.post_id==None).where(tbl.c.type=='page').order_by(tbl.c.id.desc())]),
-        select([select([tbl.c.id,case([(tbl.c.post_id>0, tbl.c.post_id)], else_=0).label('post_id'),tbl.c.status,tbl.c.title])\
-            .where(tbl.c.post_id!=None).where(tbl.c.type=='page').order_by(tbl.c.post_id.desc())])
-    )
-
-    conn = db.connect()
-    rslt = conn.execute(ua)
-    while True:
-        row = rslt.fetchone()
-        if row is not None:
-            pages.append(row)
-        else:
-            break
-    conn.close()
-
-    if len(pages)==0:
-        sys.stderr.write('No more pages found !')
-        return
-
-    ub_wise_open_view('local_page_list')
-    enc = vim.eval('&encoding')
-    vim.current.buffer[0] = "==================== Local Pages ===================="
-    tmpl = ub_get_list_template()
-    vim.current.buffer.append([(tmpl % (page.id,page.post_id,page.status,page.title)).encode(enc) for page in pages])
-
-    vim.command("map <buffer> "+ub_get_option('ub_hotkey_open_item_in_current_view')+" :py __ub_list_open_item('cur')<cr>")
-    vim.command("map <buffer> "+ub_get_option('ub_hotkey_open_item_in_splitted_view')+" :py __ub_list_open_item('split')<cr>")
-    vim.command("map <buffer> "+ub_get_option('ub_hotkey_open_item_in_tabbed_view')+" :py __ub_list_open_item('tab')<cr>")
-    vim.command("map <buffer> "+ub_get_option('ub_hotkey_delete_item')+" :py __ub_list_del_item()<cr>")
-    vim.command('call UBClearUndo()')
-    vim.command('setl nomodified')
-    vim.command("setl nomodifiable")
-    vim.current.window.cursor = (2, 0)
-
-@__ub_exception_handler
-def ub_list_remote_posts(page_size=None):
-    '''List remote posts stored in the blog
-    '''
-    # Check prerequesites
-    __ub_check_prerequesites()
-
-    # Set editor mode if the corresponding option has been set
-    ub_set_mode()
-
-    if page_size is None:
-        page_size = ub_get_option('ub_remote_pagesize')
-    page_size = int(page_size)
-    if page_size<1:
-        return
-
-    global cfg, api
-
-    posts = api.metaWeblog.getRecentPosts('', cfg.loginName, cfg.password, page_size)
-    sess = Session()
-    for post in posts:
-        local_post = sess.query(Post).filter(Post.post_id==post['postid']).first()
-        if local_post is None:
-            post['id'] = 0
-        else:
-            post['id'] = local_post.id
-            post['post_status'] = local_post.status
-    sess.close()
-
-    ub_wise_open_view('remote_post_list')
-    enc = vim.eval('&encoding')
-    vim.current.buffer[0] = "==================== Recent Posts ===================="
-    tmpl = ub_get_list_template()
-    vim.current.buffer.append([(tmpl % (post['id'],post['postid'],post['post_status'],post['title'])).encode(enc) for post in posts])
-
-    vim.command("let b:page_size=%s" % page_size)
-    vim.command("map <buffer> "+ub_get_option('ub_hotkey_open_item_in_current_view')+" :py __ub_list_open_item('cur')<cr>")
-    vim.command("map <buffer> "+ub_get_option('ub_hotkey_open_item_in_splitted_view')+" :py __ub_list_open_item('split')<cr>")
-    vim.command("map <buffer> "+ub_get_option('ub_hotkey_open_item_in_tabbed_view')+" :py __ub_list_open_item('tab')<cr>")
-    vim.command("map <buffer> "+ub_get_option('ub_hotkey_delete_item')+" :py __ub_list_del_item()<cr>")
-    vim.command('call UBClearUndo()')
-    vim.command('setl nomodified')
-    vim.command("setl nomodifiable")
-    vim.current.window.cursor = (2, 0)
-
-@__ub_exception_handler
-def ub_list_remote_pages():
-    '''List remote pages stored in the blog
-    '''
-    # Check prerequesites
-    __ub_check_prerequesites()
-
-    # Set editor mode if the corresponding option has been set
-    ub_set_mode()
-
-    global cfg, api
-
-    sess = Session()
-    pages = api.wp.getPages('', cfg.loginName, cfg.password)
-    for page in pages:
-        local_page = sess.query(Post).filter(Post.post_id==page['page_id']).filter(Post.type=='page').first()
-        if local_page is None:
-            page['id'] = 0
-        else:
-            page['id'] = local_page.id
-            page['page_status'] = local_page.status
-    sess.close()
-
-    ub_wise_open_view('remote_page_list')
-    enc = vim.eval('&encoding')
-    vim.current.buffer[0] = "==================== Blog Pages ===================="
-    tmpl = ub_get_list_template()
-    vim.current.buffer.append([(tmpl % (page['id'],page['page_id'],page['page_status'],page['title'])).encode(enc) for page in pages])
-
-    vim.command("map <buffer> "+ub_get_option('ub_hotkey_open_item_in_current_view')+" :py __ub_list_open_item('cur')<cr>")
-    vim.command("map <buffer> "+ub_get_option('ub_hotkey_open_item_in_splitted_view')+" :py __ub_list_open_item('split')<cr>")
-    vim.command("map <buffer> "+ub_get_option('ub_hotkey_open_item_in_tabbed_view')+" :py __ub_list_open_item('tab')<cr>")
-    vim.command("map <buffer> "+ub_get_option('ub_hotkey_delete_item')+" :py __ub_list_del_item()<cr>")
-    vim.command('call UBClearUndo()')
-    vim.command('setl nomodified')
-    vim.command("setl nomodifiable")
-    vim.current.window.cursor = (2, 0)
-
-def ub_list_templates():
-    '''List preview templates
-    '''
-    __ub_check_prerequesites()
-
-    # Set editor mode if the corresponding option has been set
-    ub_set_mode()
-
-    sess = Session()
-
-    tmpls = sess.query(Template).all()
-
-    if len(tmpls)==0:
-        sys.stderr.write('No template found !')
-        return
-
-    ub_wise_open_view('local_tmpl_list')
-    enc = vim.eval('&encoding')
-    vim.current.buffer[0] = "==================== Templates ===================="
-    line = "%-24s%s"
-    vim.current.buffer.append([(line % (tmpl.name,tmpl.description)).encode(enc) for tmpl in tmpls])
-
-    vim.command("map <buffer> "+ub_get_option('ub_hotkey_open_item_in_current_view')+" :py __ub_list_open_item('cur')<cr>")
-    vim.command("map <buffer> "+ub_get_option('ub_hotkey_open_item_in_splitted_view')+" :py __ub_list_open_item('split')<cr>")
-    vim.command("map <buffer> "+ub_get_option('ub_hotkey_open_item_in_tabbed_view')+" :py __ub_list_open_item('tab')<cr>")
-    vim.command("map <buffer> "+ub_get_option('ub_hotkey_delete_item')+" :py __ub_list_del_item()<cr>")
-    vim.command('call UBClearUndo()')
-    vim.command('setl nomodified')
-    vim.command("setl nomodifiable")
-    vim.current.window.cursor = (2, 0)
-
-def ub_get_templates(name_only=False):
-    # Check prerequesites
-    __ub_check_prerequesites()
-
-    # Set editor mode if the corresponding option has been set
-    ub_set_mode()
-
-    enc = vim.eval('&encoding')
-
-    sess = Session()
-    tmpls = sess.query(Template).all()
-    sess.close()
-
-    if name_only is True:
-        tmpls = [tmpl.name.encode(enc) for tmpl in tmpls]
-
-    return tmpls
-
-@__ub_exception_handler
-def ub_open_item_x(item_type, key, scope='local'):
+def ub_open_item_x(item_type, item_key, scope='local'):
     ''' Open item, this function use __ub_exception_handler and so is suitable to be called directly
     '''
-    ub_open_item(item_type, key, scope)
+    ub_open_item(item_type, item_key, scope)
 
-def ub_open_item(item_type, key, scope='local'):
+def ub_open_item(item_type, item_key, scope='local'):
     ''' Open item, this function do not use the __ub_exception_handler and so can be used programmatically
     '''
-    ub_check_item_type(item_type)
-    ub_check_scope(scope)
-    eval("ub_open_%s_%s('%s')" % (scope, item_type, key))
+    cmd = UBCmdOpen(itemKey=item_key, itemType=item_type, scope=scope)
+    cmd.execute()
 
-def ub_open_local_post(id, view_type=None):
-    '''Open local post
+@__ub_exception_handler
+def ub_open_item_under_cursor(view_type=None):
+    '''Open the item under cursor, invoked in post or page list
     '''
-    # Check prerequesites
-    __ub_check_prerequesites()
-
-    # Set editor mode if the corresponding option has been set
-    ub_set_mode()
-
-    sess = Session()
-    post = sess.query(Post).filter(Post.id==id).first()
-    if post is None:
-        raise UBException('No post found !')
-
-    post_id = post.post_id
-    if post_id is None:
-        post_id = 0
-
-    enc = vim.eval('&encoding')
-    post_meta_data = dict(\
-            id = post.id,
-            post_id = post_id,
-            title = post.title.encode(enc),
-            categories = post.categories.encode(enc),
-            tags = post.tags.encode(enc),
-            slug = post.slug.encode(enc),
-            status = post.status.encode(enc))
-
-    ub_wise_open_view('post_edit', view_type)
-    __ub_fill_meta_data(post_meta_data)
-    vim.current.buffer.append(post.content.encode(enc).split("\n"))
-
-    vim.command('setl filetype=%s' % post.syntax)
-    vim.command('setl wrap')
-    vim.command('call UBClearUndo()')
-    vim.command('setl nomodified')
-    vim.current.window.cursor = (len(post_meta_data)+3, 0)
-
-def ub_open_local_page(id, view_type=None):
-    '''Open local page
-    '''
-    # Check prerequesites
-    __ub_check_prerequesites()
-
-    # Set editor mode if the corresponding option has been set
-    ub_set_mode()
-
-    sess = Session()
-    page = sess.query(Post).filter(Post.id==id).filter(Post.type=='page').first()
-    if page is None:
-        raise UBException('No page found !')
-
-    post_id = page.post_id
-    if post_id is None:
-        post_id = 0
-
-    enc = vim.eval('&encoding')
-    page_meta_data = dict(\
-            id = page.id,
-            post_id = post_id,
-            title = page.title.encode(enc),
-            slug = page.slug.encode(enc),
-            status = page.status.encode(enc))
-
-    ub_wise_open_view('page_edit', view_type)
-    __ub_fill_meta_data(page_meta_data)
-    vim.current.buffer.append(page.content.encode(enc).split("\n"))
-
-    vim.command('setl filetype=%s' % page.syntax)
-    vim.command('setl wrap')
-    vim.command('call UBClearUndo()')
-    vim.command('setl nomodified')
-    vim.current.window.cursor = (len(page_meta_data)+3, 0)
-
-def ub_open_remote_post(id, view_type=None):
-    '''Open remote post
-    '''
-    # Check prerequesites
-    __ub_check_prerequesites()
-
-    # Set editor mode if the corresponding option has been set
-    ub_set_mode()
-
-    global cfg, api
-
-    sess = Session()
-    post = sess.query(Post).filter(Post.post_id==id).first()
-    saveit = None
-
-    # Fetch the remote post if there is not a local copy
-    if post is None:
-        remote_post = api.metaWeblog.getPost(id, cfg.loginName, cfg.password)
-        post = Post()
-        post.post_id = id
-        post.title = remote_post['title']
-        post.content = remote_post['description']
-        post.categories = ', '.join(remote_post['categories'])
-        post.tags = remote_post['mt_keywords']
-        post.slug = remote_post['wp_slug']
-        post.status = remote_post['post_status']
-        post.syntax = 'html'
-
-        saveit = ub_get_option('ub_save_after_opened', True)
-        if saveit is True:
-            sess.add(post)
-            sess.commit()
-
-    id = post.id
-    if post.id is None:
-        id = 0
-    enc = vim.eval('&encoding')
-    post_meta_data = dict(\
-            id = id,
-            post_id = post.post_id,
-            title = post.title.encode(enc),
-            categories = post.categories.encode(enc),
-            tags = post.tags.encode(enc),
-            slug = post.slug.encode(enc),
-            status = post.status.encode(enc))
-
-    ub_wise_open_view('post_edit', view_type)
-    __ub_fill_meta_data(post_meta_data)
-    vim.current.buffer.append(post.content.encode(enc).split("\n"))
-
-    vim.command('setl filetype=%s' % post.syntax)
-    vim.command('setl wrap')
-    vim.command('call UBClearUndo()')
-    if saveit is not False:
-        vim.command('setl nomodified')
-    vim.current.window.cursor = (len(post_meta_data)+3, 0)
-
-def ub_open_remote_page(id, view_type=None):
-    '''Open remote page
-    '''
-    # Check prerequesites
-    __ub_check_prerequesites()
-
-    # Set editor mode if the corresponding option has been set
-    ub_set_mode()
-
-    global cfg, api
-
-    sess = Session()
-    page = sess.query(Post).filter(Post.post_id==id).filter(Post.type=='page').first()
-    saveit = None
-
-    # Fetch the remote page if there is not a local copy
-    if page is None:
-        remote_page = api.wp.getPage('', id, cfg.loginName, cfg.password)
-        page = Post()
-        page.type = 'page'
-        page.post_id = id
-        page.title = remote_page['title']
-        page.content = remote_page['description']
-        page.slug = remote_page['wp_slug']
-        page.status = remote_page['page_status']
-        page.syntax = 'html'
-
-        saveit = ub_get_option('ub_save_after_opened', True)
-        if saveit is True:
-            sess.add(page)
-            sess.commit()
-
-    id = page.id
-    if page.id is None:
-        id = 0
-    enc = vim.eval('&encoding')
-    page_meta_data = dict(\
-            id = id,
-            post_id = page.post_id,
-            title = page.title.encode(enc),
-            slug = page.slug.encode(enc),
-            status = page.status.encode(enc))
-
-    ub_wise_open_view('page_edit', view_type)
-    __ub_fill_meta_data(page_meta_data)
-    vim.current.buffer.append(page.content.encode(enc).split("\n"))
-
-    vim.command('setl filetype=%s' % page.syntax)
-    vim.command('setl wrap')
-    vim.command('call UBClearUndo()')
-    if saveit is not False:
-        vim.command('setl nomodified')
-    vim.current.window.cursor = (len(page_meta_data)+3, 0)
-
-def ub_open_local_tmpl(name, view_type=None):
-    '''Open template
-    '''
-    # Check prerequesites
-    __ub_check_prerequesites()
-
-    # Set editor mode if the corresponding option has been set
-    ub_set_mode()
-
-    enc = vim.eval('&encoding')
-    name = name.decode(enc)
-
-    sess = Session()
-    tmpl = sess.query(Template).filter(Template.name==name).first()
-    if tmpl is None:
-        raise UBException('No template found !')
-
-    meta_data = dict(\
-            name = tmpl.name.encode(enc),
-            description = tmpl.description.encode(enc))
-
-    ub_wise_open_view('tmpl_edit', view_type)
-    __ub_fill_meta_data(meta_data)
-    vim.current.buffer.append(tmpl.content.encode(enc).split("\n"))
-
-    vim.command('setl filetype=html')
-    vim.command('setl nowrap')
-    vim.command('call UBClearUndo()')
-    vim.command('setl nomodified')
-    vim.current.window.cursor = (len(meta_data)+3, 0)
+    cmd = UBCmdOpenItemUnderCursor(view_type)
+    cmd.execute()
 
 @__ub_exception_handler
 def ub_del_item(item_type, key, scope='local'):
     '''Delete an item
     '''
-    # Check prerequesites
-    __ub_check_prerequesites()
+    cmd = UBCmdDelete(item_type, key, scope)
+    cmd.execute()
 
-    ub_check_item_type(item_type)
-    ub_check_scope(scope)
-
-    # Set editor mode if the corresponding option has been set
-    ub_set_mode()
-
-    enc = vim.eval('&encoding')
-
-    choice = vim.eval("confirm('Are you sure to delete %s %s \"%s\" ?', '&Yes\n&No')" % (scope, ub_get_item_type_name(item_type), key))
-    if choice != '1':
-        return
-
-    sess = Session()
-
-    try:
-        if item_type == 'tmpl':
-            sess.query(Template).filter(Template.name==key.decode(enc)).delete()
-            UBEventQueue.fireEvent(UBTmplDelEvent(key))
-        else:
-            id = int(key)
-
-            if scope=='remote':
-                global cfg, api
-                if item_type=='page':
-                    api.wp.deletePage('', cfg.loginName, cfg.password, id)
-                else:
-                    api.metaWeblog.deletePost('', id, cfg.loginName, cfg.password)
-                UBEventQueue.fireEvent(UBRemotePostDelEvent(id))
-            else:
-                sess.query(Post).filter(Post.id==id).delete()
-                UBEventQueue.fireEvent(UBLocalPostDelEvent(id))
-    except Exception,e:
-        sess.rollback()
-        raise e
-    else:
-        sess.commit()
-    finally:
-        sess.close()
-
-    UBEventQueue.processEvents()
+@__ub_exception_handler
+def ub_del_item_under_cursor():
+    '''Delete local post, invoked in list view
+    '''
+    cmd = UBCmdDelItemUnderCursor()
+    cmd.execute()
 
 @__ub_exception_handler
 def ub_upload_media(file_path):
@@ -1016,149 +136,769 @@ def ub_upload_media(file_path):
     img_tmpl_info = ub_get_option('ub_tmpl_img_url', True)
     img_url = img_tmpl_info['tmpl'] % result
     syntax = vim.eval('&syntax')
-    img_url = __ub_convert_str(img_url, img_tmpl_info['syntax'], syntax)
+    img_url = ub_convert_str(img_url, img_tmpl_info['syntax'], syntax)
     vim.current.range.append(img_url.split("\n"))
 
 @__ub_exception_handler
-def ub_blog_this(type='post', syntax=None):
+def ub_blog_this(item_type='post', to_syntax=None, from_syntax=None):
     '''Create a new post/page with content in the current buffer
     '''
-    if syntax is None:
-        syntax = vim.eval('&syntax')
-    try:
-        ub_check_syntax(syntax)
-    except:
-        syntax = 'markdown'
-
-    bf = vim.current.buffer[:]
-
-    if type == 'post':
-        success = ub_new_post(syntax)
-    else:
-        success = ub_new_page(syntax)
-
-    if success is True:
-        regex_meta_end = re.compile('^\s*-->')
-        for line_num in range(0, len(vim.current.buffer)):
-            line = vim.current.buffer[line_num]
-            if regex_meta_end.match(line):
-                break
-        vim.current.buffer.append(bf, line_num+1)
+    cmd = UBCmdBlogThis(item_type, to_syntax, from_syntax)
+    cmd.execute()
 
 @__ub_exception_handler
-def ub_convert(to_syntax, from_syntax=None, literal=False):
+def ub_convert(to_syntax, from_syntax=None):
     '''Convert the current buffer from one syntax to another
     '''
-    ub_check_syntax(to_syntax)
-    if from_syntax is None:
-        from_syntax = vim.eval('&syntax')
-    ub_check_syntax(from_syntax)
-
-    content = __ub_get_content()
-    enc = vim.eval('&encoding')
-    new_content = __ub_convert_str(content, from_syntax, to_syntax, enc)
-
-    if literal == True:
-        return new_content
-    else:
-        __ub_set_content(new_content.split("\n"))
-        vim.command('setl filetype=%s' % to_syntax)
+    cmd = UBCmdConvert(to_syntax, from_syntax)
+    cmd.execute()
 
 @__ub_exception_handler
 def ub_new_item(item_type='post', mixed='markdown'):
     ''' Create new item: post, page, template
     '''
-    ub_check_item_type(item_type)
-    
-    if item_type=='post' or item_type=='page':
-        ub_check_syntax(mixed)
+    cmd = UBCmdNew(item_type, mixed)
+    cmd.execute()
 
-    eval("ub_new_%s('%s')" % (item_type,mixed))
-
-def ub_new_post(syntax='markdown'):
-    '''Initialize a buffer for writing a new post
+class UBCommand(object):
+    ''' Abstract parent class for all commands of UB
     '''
-    ub_check_syntax(syntax)
+    def __init__(self, isContentAware=False):
+        self.checkPrerequisites()
+        # Set editor mode if the corresponding option has been set
+        ub_set_mode()
 
-    post_meta_data = dict(\
-            id = str(0),
-            post_id = str(0),
-            title = '',
-            categories = __ub_get_categories(),
-            tags = '',
-            slug = '',
-            status = 'draft')
+        self.isContentAware = isContentAware
+        self.scope = 'local'
+        self.itemType = None
+        self.viewScopes = []
+        self.enc = vim.eval('&encoding')
+        self.syntax = vim.eval('&syntax')
+        self.sess = Session()
+        self.viewName = ub_get_viewname('%')
 
-    ub_wise_open_view('post_edit')
-    __ub_fill_meta_data(post_meta_data)
-    __ub_append_promotion_link(syntax)
+        if self.viewName is not None:
+            vnameParts = self.viewName.split('_')
+            if ub_is_view_of_type('list'):
+                self.itemType = vnameParts[1]=='result' and 'post' or vnameParts[1]
+                self.scope = vnameParts[0]=='search' and 'local' or vnameParts[0]
+            if ub_is_view_of_type('edit'):
+                self.itemType = vnameParts[0]
 
-    vim.command('setl filetype=%s' % syntax)
-    vim.command('setl wrap')
-    vim.command('call UBClearUndo()')
-    vim.command('setl nomodified')
-    vim.current.window.cursor = (4, len(vim.current.buffer[3])-1)
+    def checkPrerequisites(self):
+        ''' Check the prerequisites
+        '''
+        if sqlalchemy is None: raise UBException('Cannot find SQLAlchemy !')
+        if Base is None or Session is None or Post is None or Template is None:
+            raise UBException('Cannot create database objects !')
+        if cfg is None: raise UBException('Settings of UltraBlog.vim is missing or invalid !')
+        if api is None: raise UBException('Cannot initiate API !')
+        if db is None: raise UBException('Cannot connect to database !')
 
-    return True
+    def checkItemType(self, itemType=None):
+        ''' Check if the item type is among the available ones
+        '''
+        itemType = itemType and itemType or self.itemType
+        if not itemType in ['post', 'page', 'tmpl', None]:
+            raise UBException('Unknow item type, available types are: post, page and tmpl !')
 
-def ub_new_page(syntax='markdown'):
-    '''Initialize a buffer for writing a new page
+    def checkScope(self, scope=None):
+        '''Check the given scope,
+        return True if it is local,
+        return False if it is remote,
+        raise an exception if it is neither of the upper two
+        '''
+        scope = scope and scope or self.scope
+        if scope=='local':
+            return True
+        elif scope=='remote':
+            return False
+        else:
+            raise UBException('Invalid scope !')
+
+    def checkSyntax(self, syntax=None):
+        ''' Check if the given syntax is among the available ones
+        '''
+        syntax = syntax is not None and syntax or self.syntax
+        valid_syntax = ['markdown', 'html', 'rst', 'textile', 'latex']
+        if syntax is None or syntax.lower() not in valid_syntax:
+            raise UBException('Unknown syntax, valid syntaxes are %s' % str(valid_syntax))
+
+    def checkViewScope(self, viewName=None):
+        ''' Check if the given viewname is among the available ones
+        '''
+        viewName = viewName is not None and viewName or self.viewName
+        if len(self.viewScopes)>0:
+            for scope in self.viewScopes:
+                if viewName is not None and viewName.endswith(scope): return
+            raise UBException('Invalid view, this command is only allowed in %s !' % str(self.viewScopes))
+
+    def execute(self):
+        ''' The main functional method of this command
+        '''
+        self._preExec()
+        self._exec()
+        self._postExec()
+
+    def _preExec(self):
+        ''' Do something before self._exec()
+        protected method, called by self.execute()
+        '''
+        self.checkItemType()
+        self.checkScope()
+        self.checkViewScope()
+        if self.isContentAware is True: self.checkSyntax()
+
+    def _exec(self):
+        ''' Do the main part of the job
+        protected method, called by self.execute()
+        '''
+        raise UBException('Not implemented yet !')
+
+    def _postExec(self):
+        ''' Do something after self._exec()
+        protected method, called by self.execute()
+        '''
+        self.sess.close()
+
+    @classmethod
+    def doDefault(cls, *args, **kwargs):
+        frame = inspect.currentframe(1)
+        self = frame.f_locals["self"]
+        methodName = frame.f_code.co_name
+        
+        method = getattr(super(cls, self), methodName, None)
+        
+        if inspect.ismethod(method):
+            return method(*args, **kwargs)
+
+class UBCmdList(UBCommand):
+    ''' Listing command, implements UBCommand
     '''
-    ub_check_syntax(syntax)
+    def __init__(self, itemType='post', scope='local', pageSize=None, pageNo=None):
+        UBCommand.__init__(self)
+        self.itemType = itemType
+        self.scope = scope
+        self.pageSize = int(pageSize is not None and pageSize or ub_get_option("ub_%s_pagesize" % self.scope))
+        self.pageNo = int(pageNo is not None and pageNo or 1)
 
-    page_meta_data = dict(\
-            id = str(0),
-            post_id = str(0),
-            title = '',
-            slug = '',
-            status = 'draft')
+    def _preExec(self):
+        UBCmdList.doDefault()
+        if self.pageNo<1: raise UBException('Page NO. cannot be less than 1 !')
+        if self.pageSize<1: raise UBException('Illegal page size (%s) !' % self.pageSize)
 
-    ub_wise_open_view('page_edit')
-    __ub_fill_meta_data(page_meta_data)
+    def _exec(self):
+        if self.itemType=='tmpl': self._listTemplates()
+        else: eval("self._list%s%ss()" % (self.scope.capitalize(), self.itemType.capitalize()))
 
-    vim.command('setl filetype=%s' % syntax)
-    vim.command('setl wrap')
-    vim.command('call UBClearUndo()')
-    vim.command('setl nomodified')
-    vim.current.window.cursor = (4, len(vim.current.buffer[3])-1)
+    def _postExec(self):
+        UBCmdList.doDefault()
+        vim.command("map <buffer> "+ub_get_option('ub_hotkey_open_item_in_current_view')+" :py ub_open_item_under_cursor('cur')<cr>")
+        vim.command("map <buffer> "+ub_get_option('ub_hotkey_open_item_in_splitted_view')+" :py ub_open_item_under_cursor('split')<cr>")
+        vim.command("map <buffer> "+ub_get_option('ub_hotkey_open_item_in_tabbed_view')+" :py ub_open_item_under_cursor('tab')<cr>")
+        vim.command("map <buffer> "+ub_get_option('ub_hotkey_delete_item')+" :py ub_del_item_under_cursor()<cr>")
+        vim.command('call UBClearUndo()')
+        vim.command('setl nomodified')
+        vim.command("setl nomodifiable")
+        vim.current.window.cursor = (2, 0)
 
-    return True
+    def _listLocalPosts(self):
+        '''List local posts stored in database
+        '''
+        posts = []
 
-def ub_new_tmpl(name):
-    '''Initialize a buffer for creating a template
+        tbl = Post.__table__
+        ua = union_all(
+            select([select([tbl.c.id,case([(tbl.c.post_id>0, tbl.c.post_id)], else_=0).label('post_id'),tbl.c.status,tbl.c.title])\
+                .where(tbl.c.post_id==None).where(tbl.c.type=='post').order_by(tbl.c.id.desc())]),
+            select([select([tbl.c.id,case([(tbl.c.post_id>0, tbl.c.post_id)], else_=0).label('post_id'),tbl.c.status,tbl.c.title])\
+                .where(tbl.c.post_id!=None).where(tbl.c.type=='post').order_by(tbl.c.post_id.desc())])
+        )
+        stmt = select([ua]).limit(self.pageSize).offset(self.pageSize*(self.pageNo-1))
+
+        conn = db.connect()
+        rslt = conn.execute(stmt)
+        while True:
+            row = rslt.fetchone()
+            if row is not None:
+                posts.append(row)
+            else:
+                break
+        conn.close()
+
+        if len(posts)==0: raise UBException('No more posts found !')
+
+        ub_wise_open_view('local_post_list')
+        vim.current.buffer[0] = "==================== Posts (Page %d) ====================" % self.pageNo
+        tmpl = ub_get_list_template()
+        vim.current.buffer.append([(tmpl % (post.id,post.post_id,post.status,post.title)).encode(self.enc) for post in posts])
+
+        vim.command("let b:page_no=%s" % self.pageNo)
+        vim.command("let b:page_size=%s" % self.pageSize)
+        vim.command("map <buffer> "+ub_get_option('ub_hotkey_pagedown')+" :py ub_list_items('post', 'local', %d, %d)<cr>" % (self.pageSize, self.pageNo+1))
+        vim.command("map <buffer> "+ub_get_option('ub_hotkey_pageup')+" :py ub_list_items('post', 'local', %d, %d)<cr>" % (self.pageSize, self.pageNo-1))
+
+    def _listRemotePosts(self):
+        '''List remote posts stored in the blog
+        '''
+        posts = api.metaWeblog.getRecentPosts('', cfg.loginName, cfg.password, self.pageSize)
+        for post in posts:
+            local_post = self.sess.query(Post).filter(Post.post_id==post['postid']).first()
+            if local_post is None:
+                post['id'] = 0
+            else:
+                post['id'] = local_post.id
+                post['post_status'] = local_post.status
+
+        ub_wise_open_view('remote_post_list')
+        vim.current.buffer[0] = "==================== Recent Posts ===================="
+        tmpl = ub_get_list_template()
+        vim.current.buffer.append([(tmpl % (post['id'],post['postid'],post['post_status'],post['title'])).encode(self.enc) for post in posts])
+
+        vim.command("let b:page_size=%s" % self.pageSize)
+
+    def _listLocalPages(self):
+        '''List local pages stored in database
+        '''
+        pages = []
+
+        tbl = Post.__table__
+        ua = union_all(
+            select([select([tbl.c.id,case([(tbl.c.post_id>0, tbl.c.post_id)], else_=0).label('post_id'),tbl.c.status,tbl.c.title])\
+                .where(tbl.c.post_id==None).where(tbl.c.type=='page').order_by(tbl.c.id.desc())]),
+            select([select([tbl.c.id,case([(tbl.c.post_id>0, tbl.c.post_id)], else_=0).label('post_id'),tbl.c.status,tbl.c.title])\
+                .where(tbl.c.post_id!=None).where(tbl.c.type=='page').order_by(tbl.c.post_id.desc())])
+        )
+
+        conn = db.connect()
+        rslt = conn.execute(ua)
+        while True:
+            row = rslt.fetchone()
+            if row is not None:
+                pages.append(row)
+            else:
+                break
+        conn.close()
+
+        if len(pages)==0: raise UBException('No more pages found !')
+
+        ub_wise_open_view('local_page_list')
+        vim.current.buffer[0] = "==================== Local Pages ===================="
+        tmpl = ub_get_list_template()
+        vim.current.buffer.append([(tmpl % (page.id,page.post_id,page.status,page.title)).encode(self.enc) for page in pages])
+
+    def _listRemotePages(self):
+        '''List remote pages stored in the blog
+        '''
+        pages = api.wp.getPages('', cfg.loginName, cfg.password)
+        for page in pages:
+            local_page = self.sess.query(Post).filter(Post.post_id==page['page_id']).filter(Post.type=='page').first()
+            if local_page is None:
+                page['id'] = 0
+            else:
+                page['id'] = local_page.id
+                page['page_status'] = local_page.status
+
+        ub_wise_open_view('remote_page_list')
+        vim.current.buffer[0] = "==================== Blog Pages ===================="
+        tmpl = ub_get_list_template()
+        vim.current.buffer.append([(tmpl % (page['id'],page['page_id'],page['page_status'],page['title'])).encode(self.enc) for page in pages])
+
+    def _listTemplates(self):
+        '''List preview templates
+        '''
+        tmpls = self.sess.query(Template).all()
+
+        if len(tmpls)==0:
+            print >> sys.stderr,'No template found !'
+            return
+
+        ub_wise_open_view('local_tmpl_list')
+        vim.current.buffer[0] = "==================== Templates ===================="
+        line = "%-24s%s"
+        vim.current.buffer.append([(line % (tmpl.name,tmpl.description)).encode(self.enc) for tmpl in tmpls])
+
+class UBCmdFind(UBCommand):
+    ''' Context search
     '''
-    # Check if the given name is a reserved word
-    try:
-        ub_check_status(name)
-    except UBException:
-        pass
-    else:
-        raise UBException("'%s' is a reserved word !" % name)
+    def __init__(self, pageNo, *keywords):
+        UBCommand.__init__(self)
+        self.pageSize = int(ub_get_option("ub_%s_pagesize" % self.scope))
+        self.pageNo = int(pageNo is not None and pageNo or 1)
+        self.keywords = keywords
 
-    # Check if the given name is already existing
-    enc = vim.eval('&encoding')
-    sess = Session()
-    if sess.query(Template).filter(Template.name==name.decode(enc)).first() is not None:
-        sess.close()
-        raise UBException('Template "%s" exists !' % name)
+    def _preExec(self):
+        UBCmdFind.doDefault()
+        if self.pageNo<1: raise UBException('Page NO. cannot be less than 1 !')
+        if self.pageSize<1: raise UBException('Illegal page size (%s) !' % self.pageSize)
 
-    meta_data = dict(\
-            name = name,
-            description = '')
+    def _exec(self):
+        posts = []
+        tbl = Post.__table__
 
-    ub_wise_open_view('tmpl_edit')
-    __ub_fill_meta_data(meta_data)
-    __ub_append_template_framework()
+        conds = []
+        for keyword in self.keywords:
+            kwcond = []
+            kwcond.append(tbl.c.title.like('%%%s%%' % keyword.decode(self.enc)))
+            kwcond.append(tbl.c.content.like('%%%s%%' % keyword.decode(self.enc)))
+            conds.append(or_(*kwcond))
 
-    vim.command('setl filetype=html')
-    vim.command('setl nowrap')
-    vim.command('call UBClearUndo()')
-    vim.command('setl nomodified')
-    vim.current.window.cursor = (3, len(vim.current.buffer[2])-1)
+        stmt = select([tbl.c.id,case([(tbl.c.post_id>0, tbl.c.post_id)], else_=0).label('post_id'),tbl.c.status,tbl.c.title],
+            and_(*conds)
+        ).limit(self.pageSize).offset(self.pageSize*(self.pageNo-1)).order_by(tbl.c.status.asc(),tbl.c.post_id.desc())
 
-def __ub_append_template_framework():
-    fw = \
-'''<html>
+        conn = db.connect()
+        rslt = conn.execute(stmt)
+        while True:
+            row = rslt.fetchone()
+            if row is not None:
+                posts.append(row)
+            else:
+                break
+        conn.close()
+
+        if len(posts)==0: raise UBException('No more posts found !')
+
+        ub_wise_open_view('search_result_list')
+        vim.current.buffer[0] = "==================== Results (Page %d) ====================" % self.pageNo
+        tmpl = ub_get_list_template()
+        vim.current.buffer.append([(tmpl % (post.id,post.post_id,post.status,post.title)).encode(self.enc) for post in posts])
+
+        vim.command("let b:page_no=%s" % self.pageNo)
+        vim.command("let b:page_size=%s" % self.pageSize)
+        vim.command("let b:ub_keywords=[%s]" % ','.join(["'%s'" % kw for kw in self.keywords]))
+        vim.command("map <buffer> "+ub_get_option('ub_hotkey_open_item_in_current_view')+" :py ub_open_item_under_cursor('cur')<cr>")
+        vim.command("map <buffer> "+ub_get_option('ub_hotkey_open_item_in_splitted_view')+" :py ub_open_item_under_cursor('split')<cr>")
+        vim.command("map <buffer> "+ub_get_option('ub_hotkey_open_item_in_tabbed_view')+" :py ub_open_item_under_cursor('tab')<cr>")
+        vim.command("map <buffer> "+ub_get_option('ub_hotkey_delete_item')+" :py ub_del_item_under_cursor()<cr>")
+        vim.command("map <buffer> "+ub_get_option('ub_hotkey_pagedown')+" :py ub_find(%d,%s)<cr>" % (self.pageNo+1, ','.join(["'%s'" % kw for kw in self.keywords])))
+        vim.command("map <buffer> "+ub_get_option('ub_hotkey_pageup')+" :py ub_find(%d,%s)<cr>" % (self.pageNo-1, ','.join(["'%s'" % kw for kw in self.keywords])))
+        vim.command('call UBClearUndo()')
+        vim.command('setl nomodified')
+        vim.command("setl nomodifiable")
+        vim.current.window.cursor = (2, 0)
+        vim.command("let @/='\\(%s\\)'" % '\\|'.join(self.keywords))
+        vim.command('setl hls')
+
+class UBCmdSave(UBCommand):
+    ''' Save items
+    '''
+    def __init__(self):
+        UBCommand.__init__(self, True)
+        self.item = None
+        self.itemKey = ub_get_meta('id')
+        self.viewScopes = ['post_edit', 'page_edit', 'tmpl_edit']
+
+    def _preExec(self):
+        UBCmdSave.doDefault()
+        # Do not bother if the current buffer is not modified
+        if vim.eval('&modified')=='0': raise UBException('This buffer has not been modified !')
+
+    def _exec(self):
+        eval('self._load%s()' % self.itemType.capitalize())
+        self.sess.add(self.item)
+        self.sess.commit()
+        self.itemKey = self.item.getKey(self.enc)
+
+    def _postExec(self):
+        UBCmdSave.doDefault()
+
+        ub_set_meta(self.item.getKeyProperty(), self.itemKey)
+        vim.command('setl nomodified')
+        
+        evt = eval("UB%sSaveEvent('%s')" % (self.itemType=='tmpl' and 'Tmpl' or 'Post', self.itemKey));
+        UBEventQueue.fireEvent(evt)
+        UBEventQueue.processEvents()
+
+    def _loadTmpl(self):
+        '''Save the current template to local database
+        '''
+        self.itemKey = ub_get_meta('name').decode(self.enc)
+
+        # Check if the given name is a reserved word
+        ub_check_reserved_word(self.itemKey)
+
+        tmpl = self.sess.query(Template).filter(Template.name==self.itemKey).first()
+        if tmpl is None:
+            tmpl = Template()
+            tmpl.name = self.itemKey
+
+        tmpl.content = "\n".join(vim.current.buffer[len(ub_get_tmpl_meta_data())+2:]).decode(self.enc)
+        tmpl.description = ub_get_meta('description').decode(self.enc)
+
+        self.item = tmpl
+
+    def _loadPost(self):
+        '''Save the current buffer to local database
+        '''
+        if self.itemKey is None:
+            post = Post()
+        else:
+            post = self.sess.query(Post).filter(Post.id==self.itemKey).first()
+
+        post.content = "\n".join(vim.current.buffer[len(ub_get_post_meta_data())+2:]).decode(self.enc)
+        post.post_id = ub_get_meta('post_id')
+        post.title = ub_get_meta('title').decode(self.enc)
+        post.categories = ub_get_meta('categories').decode(self.enc)
+        post.tags = ub_get_meta('tags').decode(self.enc)
+        post.slug = ub_get_meta('slug').decode(self.enc)
+        post.status = ub_get_meta('status').decode(self.enc)
+        post.syntax = self.syntax
+
+        self.item = post
+
+    def _loadPage(self):
+        '''Save the current page to local database
+        '''
+        if self.itemKey is None:
+            page = Post()
+            page.type = 'page'
+        else:
+            page = self.sess.query(Post).filter(Post.id==self.itemKey).first()
+
+        page.content = "\n".join(vim.current.buffer[len(ub_get_page_meta_data())+2:]).decode(self.enc)
+        page.post_id = ub_get_meta('post_id')
+        page.title = ub_get_meta('title').decode(self.enc)
+        page.slug = ub_get_meta('slug').decode(self.enc)
+        page.status = ub_get_meta('status').decode(self.enc)
+        page.syntax = self.syntax
+
+        self.item = page
+
+class UBCmdSend(UBCommand):
+    ''' Send item
+    '''
+    def __init__(self, status=None):
+        UBCommand.__init__(self, True)
+        self.status = status is not None and status or ub_get_meta('status')
+        self.publish = ub_check_status(self.status)
+        self.item = None
+        self.viewScopes = ['post_edit', 'page_edit'];
+        self.postId = ub_get_meta('post_id')
+
+    def _exec(self):
+        eval('self._load%s()' % self.itemType.capitalize())
+        if self.postId is None:
+            self.postId = api.metaWeblog.newPost('', cfg.loginName, cfg.password, self.item, self.publish)
+        else:
+            api.metaWeblog.editPost(self.postId, cfg.loginName, cfg.password, self.item, self.publish)
+        msg = "%s sent as %s !" % (self.itemType.capitalize(), self.status)
+        print >> sys.stdout,msg
+
+    def _postExec(self):
+        UBCmdSend.doDefault()
+
+        if self.postId != ub_get_meta('post_id'):
+            ub_set_meta('post_id', self.postId)
+        if self.status != ub_get_meta('status'):
+            ub_set_meta('status', self.status)
+
+        saveit = ub_get_option('ub_save_after_sent')
+        if '1'==vim.eval('&modified') and saveit is not None and saveit.isdigit() and int(saveit) == 1:
+            ub_save_item()
+        
+        evt = eval("UBPostSendEvent(%s)" % self.postId)
+        UBEventQueue.fireEvent(evt)
+        UBEventQueue.processEvents()
+
+    def _loadPost(self):
+        '''Send the current buffer to the blog
+        '''
+        self.item = dict(\
+            title = ub_get_meta('title'),
+            description = ub_get_html(),
+            categories = [cat.strip() for cat in ub_get_meta('categories').split(',')],
+            mt_keywords = ub_get_meta('tags'),
+            wp_slug = ub_get_meta('slug'),
+            post_type = 'post',
+            post_status = self.status
+        )
+
+    def _loadPage(self):
+        '''Send the current page to the blog
+        '''
+        self.item = dict(\
+            title = ub_get_meta('title'),
+            description = ub_get_html(),
+            wp_slug = ub_get_meta('slug'),
+            post_type = 'page',
+            page_status = self.status
+        )
+
+class UBCmdOpen(UBCommand):
+    ''' Open an item
+    '''
+    def __init__(self, itemKey, itemType, scope='local', viewType=None):
+        UBCommand.__init__(self)
+        self.itemKey = itemType=='tmpl' and itemKey.decode(self.enc) or int(itemKey)
+        self.itemType = itemType
+        self.scope = scope
+        self.viewType = viewType
+        self.saveIt = ub_get_option('ub_save_after_opened', True)
+        self.metaData = None
+        self.item = None
+
+    def _exec(self):
+        eval("self._load%s%s()" % (self.scope.capitalize(), self.itemType.capitalize()))
+        ub_wise_open_view('%s_edit' % self.itemType, self.viewType)
+        self.metaData = self.item.getMetaDict(self.enc)
+        ub_fill_meta_data(self.metaData)
+        vim.current.buffer.append(self.item.content.encode(self.enc).split("\n"))
+
+    def _postExec(self):
+        UBCmdOpen.doDefault()
+
+        vim.command('setl filetype=%s' % self.item.syntax)
+        vim.command('setl wrap')
+        vim.command('call UBClearUndo()')
+        if self.itemType=='tmpl' or ub_is_id(self.item.id): vim.command('setl nomodified')
+        vim.current.window.cursor = (len(self.metaData)+3, 0)
+
+    def _loadLocalPost(self):
+        '''Open local post
+        '''
+        self.item = self.sess.query(Post).filter(Post.id==self.itemKey).first()
+        if self.item is None: raise UBException('No post found !')
+
+    def _loadLocalPage(self):
+        '''Open local page
+        '''
+        self.item = self.sess.query(Post).filter(Post.id==self.itemKey).filter(Post.type=='page').first()
+        if self.item is None: raise UBException('No page found !')
+
+    def _loadRemotePost(self):
+        '''Open remote post
+        '''
+        self.item = self.sess.query(Post).filter(Post.post_id==self.itemKey).first()
+
+        # Fetch the remote post if there is not a local copy
+        if self.item is None:
+            remote_post = api.metaWeblog.getPost(self.itemKey, cfg.loginName, cfg.password)
+            self.item = Post()
+            self.item.post_id = self.itemKey
+            self.item.title = remote_post['title']
+            self.item.content = remote_post['description']
+            self.item.categories = ', '.join(remote_post['categories'])
+            self.item.tags = remote_post['mt_keywords']
+            self.item.slug = remote_post['wp_slug']
+            self.item.status = remote_post['post_status']
+            self.item.syntax = 'html'
+
+            if self.saveIt is True:
+                self.sess.add(self.item)
+                self.sess.commit()
+
+    def _loadRemotePage(self):
+        '''Open remote page
+        '''
+        self.item = self.sess.query(Post).filter(Post.post_id==self.itemKey).filter(Post.type=='page').first()
+
+        # Fetch the remote page if there is not a local copy
+        if self.item is None:
+            remote_page = api.wp.getPage('', self.itemKey, cfg.loginName, cfg.password)
+            self.item = Post()
+            self.item.type = 'page'
+            self.item.post_id = self.itemKey
+            self.item.title = remote_page['title']
+            self.item.content = remote_page['description']
+            self.item.slug = remote_page['wp_slug']
+            self.item.status = remote_page['page_status']
+            self.item.syntax = 'html'
+
+            if self.saveIt is True:
+                self.sess.add(self.item)
+                self.sess.commit()
+
+    def _loadLocalTmpl(self):
+        '''Open template
+        '''
+        self.item = self.sess.query(Template).filter(Template.name==self.itemKey).first()
+        if self.item is None: raise UBException('No template found !')
+        self.item.syntax = 'html'
+
+class UBCmdPreview(UBCommand):
+    ''' Preview command
+    '''
+    def __init__(self, tmpl=None):
+        UBCommand.__init__(self, True)
+        self.tmpl = tmpl is not None and tmpl or ub_get_option('ub_default_template')
+        self.viewScopes = ['post_edit', 'page_edit']
+
+    def _exec(self):
+        prv_url = ''
+        if self.tmpl in ['private', 'publish', 'draft']:
+            ub_send_item(self.tmpl)
+
+            if ub_is_view('page_edit'):
+                prv_url = "%s?page_id=%s&preview=true"
+            else:
+                prv_url = "%s?p=%s&preview=true"
+
+            prv_url = prv_url % (cfg.url, ub_get_meta('post_id'))
+        else:
+            template = self.sess.query(Template).filter(Template.name==self.tmpl.decode(self.enc)).first()
+            if template is None:
+                raise UBException("Template '%s' is not found !" % self.tmpl)
+
+            tmpl_str = template.content.encode(self.enc)
+
+            draft = {}
+            draft['title'] = ub_get_meta('title')
+            draft['content'] = ub_get_html()
+
+            tmpfile = tempfile.mktemp(suffix='.html')
+            fp = open(tmpfile, 'w')
+            fp.write(tmpl_str % draft)
+            fp.close()
+            prv_url = "file://%s" % tmpfile
+
+        webbrowser.open(prv_url)
+
+class UBCmdDelete(UBCommand):
+    def __init__(self, itemType, itemKey, scope='local'):
+        UBCommand.__init__(self)
+        self.itemType = itemType
+        self.itemKey = itemType=='tmpl' and itemKey or int(itemKey)
+        self.scope = scope
+        self.itemTypeName = ub_get_item_type_name(self.itemType)
+        self.itemName = self.itemKey
+
+        self.item = None
+        if self.itemType == 'tmpl':
+            self.item = self.sess.query(Template).filter(Template.name==self.itemKey.decode(self.enc)).first()
+        elif self.scope=='local':
+            self.item = self.sess.query(Post).filter(Post.type==self.itemType).filter(Post.id==self.itemKey).first()
+
+    def _preExec(self):
+        UBCmdDelete.doDefault()
+        # When deleting local items, check if it exists
+        if (self.scope=='local' or self.itemType=='tmpl'):
+            if self.item is None:
+                raise UBException('Cannot find %s by key value %s !' % (self.itemTypeName,self.itemKey))
+            else:
+                self.itemName = self.item.getName(self.enc)
+        # Ask for confirmation
+        choice = vim.eval("confirm('Are you sure to delete %s %s \"%s\" ?', '&Yes\n&No')" % (self.scope.encode(self.enc), self.itemTypeName.encode(self.enc), self.itemName))
+        if choice != '1': raise UBException('Deletion canceled !')
+
+    def _exec(self):
+        try:
+            if self.itemType == 'tmpl':
+                self.sess.query(Template).filter(Template.name==self.itemKey.decode(self.enc)).delete()
+                UBEventQueue.fireEvent(UBTmplDelEvent(self.itemKey))
+            else:
+                if self.scope=='remote':
+                    if self.itemType=='page':
+                        api.wp.deletePage('', cfg.loginName, cfg.password, self.itemKey)
+                    else:
+                        api.metaWeblog.deletePost('', self.itemKey, cfg.loginName, cfg.password)
+                    UBEventQueue.fireEvent(UBRemotePostDelEvent(self.itemKey))
+                else:
+                    self.sess.query(Post).filter(Post.type==self.itemType).filter(Post.id==self.itemKey).delete()
+                    UBEventQueue.fireEvent(UBLocalPostDelEvent(self.itemKey))
+        except Exception,e:
+            self.sess.rollback()
+            self.sess.close()
+            raise e
+        else:
+            self.sess.commit()
+            UBEventQueue.processEvents()
+            print >> sys.stdout, '%s %s "%s" was deleted !' % (self.scope.capitalize().encode(self.enc), self.itemTypeName.encode(self.enc), self.itemName)
+
+class UBCmdOpenItemUnderCursor(UBCommand):
+    def __init__(self, viewType=None):
+        UBCommand.__init__(self)
+        self.viewType = viewType
+        self.viewScopes = ['list']
+
+        lineParts = vim.current.line.split()
+        if ub_is_cursorline_valid('template'):
+            self.itemKey = lineParts[0]
+        elif ub_is_cursorline_valid('general'):
+            if self.scope == 'local':
+                self.itemKey = int(lineParts[0])
+                self.itemType = self.sess.query(Post.type).filter(Post.id==self.itemKey).first()[0]
+            else:
+                self.itemKey = int(lineParts[1])
+        else: raise UBException('This is not an item !')
+
+    def _exec(self):
+        cmd = UBCmdOpen(itemKey=self.itemKey, itemType=self.itemType, scope=self.scope, viewType=self.viewType)
+        cmd.execute()
+
+class UBCmdDelItemUnderCursor(UBCommand):
+    def __init__(self):
+        UBCommand.__init__(self)
+        self.viewScopes = ['list']
+        self.postId = None
+
+        lineParts = vim.current.line.split()
+        if ub_is_cursorline_valid('template'):
+            self.itemKey = lineParts[0]
+        elif ub_is_cursorline_valid('general'):
+            self.itemKey = int(lineParts[0])
+            self.postId = int(lineParts[1])
+            rslt = self.sess.query(Post.type).filter(
+                    or_(
+                        and_(Post.id>0, Post.id==self.itemKey), 
+                        and_(Post.post_id>0, Post.post_id==self.postId)
+                    )
+                ).first()
+            self.itemType = rslt is not None and rslt[0] or self.itemType
+        else: raise UBException('This is not an item !')
+
+    def _exec(self):
+        if ub_is_id(self.itemKey, True) or self.itemType=='tmpl':
+            ub_del_item(self.itemType, self.itemKey, 'local')
+        if ub_is_id(self.postId, True):
+            ub_del_item(self.itemType, self.postId, 'remote')
+
+class UBCmdNew(UBCommand):
+    def __init__(self, itemType='post', mixed='markdown'):
+        UBCommand.__init__(self, True)
+
+        self.itemType = itemType
+        self.syntax = mixed
+        if self.itemType=='tmpl':
+            self.itemKey = mixed
+            self.syntax = 'html'
+
+    def _exec(self):
+        eval('self._createNew%s()' % self.itemType.capitalize())
+
+    def _createNewPost(self):
+        item = Post()
+        metaData = item.getMetaDict()
+        metaData['categories'] = self.__getCategories()
+        metaData['status'] = 'draft'
+
+        ub_wise_open_view('post_edit')
+        ub_fill_meta_data(metaData)
+        self.__appendPromotionLink()
+
+    def _createNewPage(self):
+        item = Post()
+        item.type = 'page'
+        metaData = item.getMetaDict()
+        metaData['status'] = 'draft'
+
+        ub_wise_open_view('page_edit')
+        ub_fill_meta_data(metaData)
+
+    def _createNewTmpl(self):
+        # Check if the given name is a reserved word
+        ub_check_reserved_word(self.itemKey)
+        # Check if the given name is already existing
+        if self.sess.query(Template).filter(Template.name==self.itemKey.decode(self.enc)).first() is not None:
+            self.sess.close()
+            raise UBException('Template "%s" exists !' % self.itemKey)
+
+        item = Template()
+        metaData = item.getMetaDict()
+        metaData['name'] = self.itemKey
+        ub_wise_open_view('tmpl_edit')
+        ub_fill_meta_data(metaData)
+        fw = '''<html>
     <head>
         <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
         <title>%(title)s</title>
@@ -1169,217 +909,94 @@ def __ub_append_template_framework():
         %(content)s
     </body>
 </html>'''
-    lines = fw.split("\n")
-    vim.current.buffer.append(lines)
+        lines = fw.split("\n")
+        vim.current.buffer.append(lines)
 
-def __ub_fill_meta_data(meta_data):
-    if ub_is_view('post_edit'):
-        __ub_fill_post_meta_data(meta_data)
-    elif ub_is_view('page_edit'):
-        __ub_fill_page_meta_data(meta_data)
-    elif ub_is_view('tmpl_edit'):
-        __ub_fill_tmpl_meta_data(meta_data)
-    else:
-        raise UBException('Unknown view !')
+    def _postExec(self):
+        UBCmdNew.doDefault()
 
-def __ub_fill_post_meta_data(meta_dict):
-    '''Fill the current buffer with some lines of meta data for a post
-    '''
-    meta_text = \
-"""<!--
-$id:              %(id)s
-$post_id:         %(post_id)s
-$title:           %(title)s
-$categories:      %(categories)s
-$tags:            %(tags)s
-$slug:            %(slug)s
-$status:          %(status)s
--->""" % meta_dict
-    
-    meta_lines = meta_text.split('\n')
-    if len(vim.current.buffer) >= len(meta_lines):
-        for i in range(0,len(meta_lines)):
-            vim.current.buffer[i] = meta_lines[i]
-    else:
-        vim.current.buffer[0] = meta_lines[0]
-        vim.current.buffer.append(meta_lines[1:])
+        vim.command('setl filetype=%s' % self.syntax)
+        vim.command('setl nowrap')
+        vim.command('call UBClearUndo()')
+        vim.command('setl nomodified')
+        if self.itemType=='tmpl': vim.current.window.cursor = (3, len(vim.current.buffer[2])-1)
+        else: vim.current.window.cursor = (4, len(vim.current.buffer[3])-1)
 
-def __ub_fill_page_meta_data(meta_dict):
-    '''Fill the current buffer with some lines of meta data for a page
-    '''
-    meta_text = \
-"""<!--
-$id:              %(id)s
-$post_id:         %(post_id)s
-$title:           %(title)s
-$slug:            %(slug)s
-$status:          %(status)s
--->""" % meta_dict
-    
-    meta_lines = meta_text.split('\n')
-    if len(vim.current.buffer) >= len(meta_lines):
-        for i in range(0,len(meta_lines)):
-            vim.current.buffer[i] = meta_lines[i]
-    else:
-        vim.current.buffer[0] = meta_lines[0]
-        vim.current.buffer.append(meta_lines[1:])
+    def __getCategories(self):
+        cats = api.metaWeblog.getCategories('', cfg.loginName, cfg.password)
+        return ', '.join([cat['description'].encode(self.enc) for cat in cats])
 
-def __ub_fill_tmpl_meta_data(meta_dict):
-    '''Fill the current buffer with some lines of meta data for a template
-    '''
-    meta_text = \
-"""<!--
-$name:            %(name)s
-$description:     %(description)s
--->""" % meta_dict
-    
-    meta_lines = meta_text.split('\n')
-    if len(vim.current.buffer) >= len(meta_lines):
-        for i in range(0,len(meta_lines)):
-            vim.current.buffer[i] = meta_lines[i]
-    else:
-        vim.current.buffer[0] = meta_lines[0]
-        vim.current.buffer.append(meta_lines[1:])
-
-def __ub_get_html(body_only=True):
-    '''Generate HTML string from the current buffer
-    '''
-    content = __ub_get_content()
-    syntax = vim.eval('&syntax')
-    enc = vim.eval('&encoding')
-    html = ub_convert('html', syntax, True)
-
-    if not body_only:
-        html = \
-'''<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
-<html>
-    <head>
-       <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
-    </head>
-    <body>
-    %s
-    </body>
-</html>''' % html
-
-    return html
-
-def __ub_append_promotion_link(syntax='markdown'):
-    '''Append a promotion link to the homepage of UltraBlog.vim
-    '''
-    doit = ub_get_option('ub_append_promotion_link')
-    if doit is not None and doit.isdigit() and int(doit) == 1:
-        if ub_is_view('post_edit') or ub_is_view('page_edit'):
-            if syntax == 'markdown':
+    def __appendPromotionLink(self):
+        doit = ub_get_option('ub_append_promotion_link')
+        if doit is not None and doit.isdigit() and int(doit) == 1:
+            if self.syntax == 'markdown':
                 link = 'Posted via [UltraBlog.vim](%s).' % cfg.homepage
             else:
                 link = 'Posted via <a href="%s">UltraBlog.vim</a>.' % cfg.homepage
             vim.current.buffer.append(link)
-        else:
-            raise UBException('Invalid view !')
 
-def __ub_get_categories():
-    '''Fetch categories and format them into a string
-    '''
-    cats = api.metaWeblog.getCategories('', cfg.loginName, cfg.password)
-    return ', '.join([cat['description'].encode('utf-8') for cat in cats])
+class UBCmdBlogThis(UBCommand):
+    def __init__(self, itemType='post', toSyntax=None, fromSyntax=None):
+        UBCommand.__init__(self, True)
 
-def __ub_check_prerequesites():
-    if cfg is None:
-        raise UBException('No valid configurations found !')
+        self.itemType = itemType
+        self.toSyntax = toSyntax is not None and toSyntax or self.syntax
+        self.syntax = fromSyntax is not None and fromSyntax or self.toSyntax
 
-    if sqlalchemy is None:
-        raise UBException('SQLAlchemy v0.7 or newer is required !')
+    def _preExec(self):
+        UBCmdBlogThis.doDefault()
+        self.checkSyntax(self.toSyntax)
 
-    if markdown is None:
-        raise UBException('No module named markdown or markdown2 !')
+    def _exec(self):
+        bf = vim.current.buffer[:]
+        ub_new_item(self.itemType, self.toSyntax)
+        regex_meta_end = re.compile('^\s*-->')
+        for line_num in range(0, len(vim.current.buffer)):
+            line = vim.current.buffer[line_num]
+            if regex_meta_end.match(line): break
+        vim.current.buffer.append(ub_convert_str("\n".join(bf), self.syntax, self.toSyntax, self.enc).split("\n"), line_num+1)
 
-def __ub_get_post_meta_data():
-    '''Get all meta data of the post and return a dict
-    '''
-    id = ub_get_meta('id')
-    if id is None:
-        id = 0
-    post_id = ub_get_meta('post_id')
-    if post_id is None:
-        post_id = 0
+class UBCmdConvert(UBCommand):
+    def __init__(self, toSyntax, fromSyntax=None):
+        UBCommand.__init__(self, True)
+        self.toSyntax = toSyntax
+        self.syntax = fromSyntax is not None and fromSyntax or self.syntax
 
-    return dict(\
-        id = id,
-        post_id = post_id,
-        title = ub_get_meta('title'),
-        categories = ub_get_meta('categories'),
-        tags = ub_get_meta('tags'),
-        slug = ub_get_meta('slug'),
-        status = ub_get_meta('status')
-    )
+    def _preExec(self):
+        UBCmdConvert.doDefault()
+        self.checkSyntax(self.toSyntax)
 
-def __ub_get_page_meta_data():
-    '''Get all meta data of the page and return a dict
-    '''
-    id = ub_get_meta('id')
-    if id is None:
-        id = 0
-    post_id = ub_get_meta('post_id')
-    if post_id is None:
-        post_id = 0
+    def _exec(self):
+        content = ub_get_content()
+        content = ub_convert_str(content, self.syntax, self.toSyntax, self.enc)
+        ub_set_content(content.split("\n"))
+        vim.command('setl filetype=%s' % self.toSyntax)
 
-    return dict(\
-        id = id,
-        post_id = post_id,
-        title = ub_get_meta('title'),
-        slug = ub_get_meta('slug'),
-        status = ub_get_meta('status')
-    )
+class UBCmdRefresh(UBCommand):
+    def __init__(self):
+        UBCommand.__init__(self)
+        self.viewScopes = ['list','edit']
 
-def __ub_get_content():
-    '''Generate content from the current buffer
-    '''
-    if ub_is_view('post_edit'):
-        meta_dict = __ub_get_post_meta_data()
-    elif ub_is_view('page_edit'):
-        meta_dict = __ub_get_page_meta_data()
-    else:
-        return None
-
-    content = "\n".join(vim.current.buffer[len(meta_dict)+2:])
-    return content
-
-def __ub_set_content(lines):
-    '''Set the given lines to the content area of the current buffer
-    '''
-    if ub_is_view('post_edit'):
-        meta_dict = __ub_get_post_meta_data()
-    elif ub_is_view('page_edit'):
-        meta_dict = __ub_get_page_meta_data()
-    else:
-        return False
-
-    del vim.current.buffer[len(meta_dict)+2:]
-    vim.current.buffer.append(lines, len(meta_dict)+2)
-    return True
-
-def __ub_convert_str(content, from_syntax, to_syntax, encoding=None):
-    if from_syntax == to_syntax \
-        or not ub_is_valid_syntax(from_syntax) \
-        or not ub_is_valid_syntax(to_syntax):
-        return content
-
-    if from_syntax == 'markdown' and to_syntax == 'html':
-        if encoding is not None:
-            new_content = markdown.markdown(content.decode(encoding)).encode(encoding)
-        else:
-            new_content = markdown.markdown(content)
-    else:
-        cmd_parts = []
-        cmd_parts.append(ub_get_option('ub_converter_command'))
-        cmd_parts.extend(ub_get_option('ub_converter_options'))
-        try:
-            cmd_parts.append(ub_get_option('ub_converter_option_from') % from_syntax)
-            cmd_parts.append(ub_get_option('ub_converter_option_to') % to_syntax)
-        except TypeError:
-            pass
-        import subprocess
-        p = subprocess.Popen(cmd_parts, stdin=subprocess.PIPE, stdout=subprocess.PIPE)
-        new_content = p.communicate(content)[0].replace("\r\n", "\n")
-    return new_content
+    def _exec(self):
+        if self.viewName == 'search_result_list':
+            kws = ub_get_bufvar('ub_keywords')
+            pno = ub_get_bufvar('page_no')
+            ub_find(pno, *kws)
+        elif ub_is_view_of_type('list'):
+            psize = ub_get_bufvar('page_size')
+            pno = ub_get_bufvar('page_no')
+            ub_list_items(self.itemType, self.scope, psize, pno)
+        elif ub_is_view_of_type('edit'):
+            itemKey = self.itemType=='tmpl' and ub_get_meta('name') or ub_get_meta('id')
+            if itemKey is not None:
+                modified = '1'==vim.eval('&modified')
+                vim.command('setl nomodified')
+                try:
+                    ub_open_item(self.itemType, itemKey, 'local')
+                except Exception, e:
+                    vcmd = modified is True and 'setl modified' or 'setl nomodified'
+                    vim.command(vcmd)
+                    print >> sys.stderr,str(e)
+            else:
+                raise UBException('Cannot find key value of the current buffer !')
 
