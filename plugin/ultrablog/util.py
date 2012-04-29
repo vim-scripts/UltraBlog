@@ -227,6 +227,8 @@ def ub_get_option(opt, deal=False):
         val = val is None and '<c-pagedown>' or val
     elif opt == 'ub_hotkey_pageup':
         val = val is None and '<c-pageup>' or val
+    elif opt == 'ub_hotkey_save_current_item':
+        val = val is None and '<c-s>' or val
     elif opt == 'ub_tmpl_img_url':
         val = val is None and "markdown###![%(file)s][]\n[%(file)s]:%(url)s" or val
     elif opt == 'ub_default_template':
@@ -239,6 +241,8 @@ def ub_get_option(opt, deal=False):
         val = __get_positive(val, 30)
     elif opt == 'ub_socket_timeout':
         val = __get_positive(val, 10)
+    elif opt == 'ub_debug':
+        val = __get_positive(val, 0)
 
     if deal:
         if opt == 'ub_tmpl_img_url':
@@ -605,5 +609,20 @@ def ub_echo(msg):
     cmd = '''echo "%s"''' % msg.replace('"', "'")
     vim.command(cmd)
 
-if __name__ == '__main__':
-    pass
+def raw(text):
+    """Returns a raw string representation of text"""
+    escape_dict={'\a':r'\a', '\b':r'\b', '\c':r'\c', '\f':r'\f', '\n':r'\n',
+               '\r':r'\r', '\t':r'\t', '\v':r'\v', '\'':r'\'', '\"':r'\"',
+               '\0':r'\0', '\1':r'\1', '\2':r'\2', '\3':r'\3', '\4':r'\4',
+               '\5':r'\5', '\6':r'\6', '\7':r'\7', '\8':r'\8', '\9':r'\9'}
+    return "".join([escape_dict.get(char,char) for char in text])
+
+def regex_replace(string, expr, repl):
+    """Do substitutions on the string for repls matching the expr"""
+    r = re.compile(raw(expr))
+    return r.sub(repl, string)
+
+def regexp_search(expr, item):
+    """Check if the item has a sub-string which matches the expr"""
+    reg = re.compile(expr)
+    return reg.search(item) is not None

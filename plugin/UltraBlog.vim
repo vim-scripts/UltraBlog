@@ -2,7 +2,7 @@
 " File:        UltraBlog.vim
 " Description: Ultimate vim blogging plugin that manages web logs
 " Author:      Lenin Lee <lenin.lee at gmail dot com>
-" Version:     3.3.0
+" Version:     3.4.0
 " License:     The New BSD License
 "
 " ============================================================================
@@ -188,7 +188,13 @@ command! -nargs=* -complete=customlist,UBNewCmpl UBNew exec('py ub_new_item(<f-a
 command! -nargs=* -complete=customlist,UBOpenCmpl UBOpen exec('py ub_open_item_x(<f-args>)')
 command! -nargs=* -complete=customlist,UBDelCmpl UBDel exec('py ub_del_item(<f-args>)')
 command! -nargs=* -complete=customlist,UBThisCmpl UBThis exec('py ub_blog_this(<f-args>)')
-command! -nargs=+ UBFind exec('py ub_find(1, <f-args>)')
+command! -nargs=+ UBFind exec('py ub_search(0, 1, <f-args>)')
+command! -nargs=+ UBRegexSearch exec('py ub_search(1, 1, <f-args>)')
+command! -nargs=+ UBReplace exec('py ub_replace(0, <f-args>)')
+command! -nargs=+ UBRegexReplace exec('py ub_replace(1, <f-args>)')
+command! -nargs=0 UBEnableDebug exec('py ub_debug(1)')
+command! -nargs=0 UBDisableDebug exec('py ub_debug(0)')
+command! -nargs=0 UBToggleDebug exec('py ub_debug(2)')
 
 " Auto-commands
 autocmd! BufEnter * py __ub_on_buffer_enter()
@@ -209,5 +215,4 @@ def __ub_on_buffer_enter():
     if ub_is_view_outdated('%'):
         ub_refresh_current_view()
         ub_set_view_outdated('%', False)
-
 EOF

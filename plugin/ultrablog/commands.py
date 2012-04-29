@@ -12,6 +12,8 @@ from eventqueue import UBEventQueue
 
 def __ub_exception_handler(func):
     def __check(*args,**kwargs):
+        dbg_enabled = ub_get_option('ub_debug')
+        if dbg_enabled == 1: return func(*args,**kwargs)
         try:
             return func(*args,**kwargs)
         except UBException, e:
@@ -45,6 +47,20 @@ def __ub_enc_check(func):
         return func(*args, **kw)
     return __check
 
+def ub_debug(mode):
+    """Set debug mode
+    0: Disable debug mode
+    1: Enable debug mode
+    2: Toggle debug status
+    """
+    if mode in [0,1]: dbg_status = mode
+    else:
+        dbg_enabled = ub_get_option('ub_debug')
+        dbg_status = (dbg_enabled == 0) and 1 or 0
+    vim.command("let g:ub_debug = %d" % dbg_status)
+    if dbg_status == 1: dbe.echo = True
+    else: dbe.echo = False
+
 @__ub_exception_handler
 def ub_list_items(item_type='post', scope='local', page_size=None, page_no=None):
     ''' List items
@@ -53,10 +69,17 @@ def ub_list_items(item_type='post', scope='local', page_size=None, page_no=None)
     cmd.execute()
 
 @__ub_exception_handler
-def ub_find(page_no, *keywords):
+def ub_search(is_regexp, page_no, *keywords):
     ''' List posts/pages which match the keywords given
     '''
-    cmd = UBCmdFind(page_no, *keywords)
+    cmd = UBCmdSearch(is_regexp, page_no, *keywords)
+    cmd.execute()
+
+@__ub_exception_handler
+def ub_replace(is_regexp, needle, replacement):
+    ''' List posts/pages which match the keywords given
+    '''
+    cmd = UBCmdReplace(is_regexp, needle, replacement)
     cmd.execute()
 
 @__ub_exception_handler
@@ -171,7 +194,7 @@ class UBCommand(object):
     def __init__(self, isContentAware=False):
         self.checkPrerequisites()
         # Set editor mode if the corresponding option has been set
-        ub_set_mode()
+        ub_set_mode(dbe)
 
         self.isContentAware = isContentAware
         self.scope = 'local'
@@ -198,7 +221,7 @@ class UBCommand(object):
             raise UBException(_('Cannot create database objects !'))
         if cfg is None: raise UBException(_('Settings of UltraBlog.vim is missing or invalid !'))
         if api is None: raise UBException(_('Cannot initiate API !'))
-        if db is None: raise UBException(_('Cannot connect to database !'))
+        if dbe is None: raise UBException(_('Cannot connect to database !'))
 
     def checkItemType(self, itemType=None):
         ''' Check if the item type is among the available ones
@@ -301,6 +324,7 @@ class UBCmdList(UBCommand):
         vim.command('call UBClearUndo()')
         vim.command('setl nomodified')
         vim.command("setl nomodifiable")
+        vim.command("setl nohls")
         vim.current.window.cursor = (2, 0)
 
     def _listLocalPosts(self):
@@ -317,7 +341,7 @@ class UBCmdList(UBCommand):
         )
         stmt = select([ua]).limit(self.pageSize).offset(self.pageSize*(self.pageNo-1))
 
-        conn = db.connect()
+        conn = dbe.connect()
         rslt = conn.execute(stmt)
         while True:
             row = rslt.fetchone()
@@ -371,7 +395,7 @@ class UBCmdList(UBCommand):
                 .where(tbl.c.post_id!=None).where(tbl.c.type=='page').order_by(tbl.c.post_id.desc())])
         )
 
-        conn = db.connect()
+        conn = dbe.connect()
         rslt = conn.execute(ua)
         while True:
             row = rslt.fetchone()
@@ -417,17 +441,18 @@ class UBCmdList(UBCommand):
         line = "%-24s%s"
         vim.current.buffer.append([(line % (tmpl.name,tmpl.description)).encode(self.enc) for tmpl in tmpls])
 
-class UBCmdFind(UBCommand):
+class UBCmdSearch(UBCommand):
     ''' Context search
     '''
-    def __init__(self, pageNo, *keywords):
+    def __init__(self, isRegexp, pageNo, *keywords):
         UBCommand.__init__(self)
         self.pageSize = int(ub_get_option("ub_%s_pagesize" % self.scope))
         self.pageNo = int(pageNo is not None and pageNo or 1)
         self.keywords = keywords
+        self.isRegexp = isRegexp
 
     def _preExec(self):
-        UBCmdFind.doDefault()
+        UBCmdSearch.doDefault()
         if self.pageNo<1: raise UBException(_('Page NO. cannot be less than 1 !'))
         if self.pageSize<1: raise UBException(_('Illegal page size (%s) !') % self.pageSize)
 
@@ -438,15 +463,25 @@ class UBCmdFind(UBCommand):
         conds = []
         for keyword in self.keywords:
             kwcond = []
-            kwcond.append(tbl.c.title.like('%%%s%%' % keyword.decode(self.enc)))
-            kwcond.append(tbl.c.content.like('%%%s%%' % keyword.decode(self.enc)))
+            if self.isRegexp:
+                kwcond.append(tbl.c.title.op('regexp')(keyword.decode(self.enc)))
+                kwcond.append(tbl.c.content.op('regexp')(keyword.decode(self.enc)))
+            else:
+                kwcond.append(tbl.c.title.like('%%%s%%' % keyword.decode(self.enc)))
+                kwcond.append(tbl.c.content.like('%%%s%%' % keyword.decode(self.enc)))
             conds.append(or_(*kwcond))
 
         stmt = select([tbl.c.id,case([(tbl.c.post_id>0, tbl.c.post_id)], else_=0).label('post_id'),tbl.c.status,tbl.c.title],
             and_(*conds)
         ).limit(self.pageSize).offset(self.pageSize*(self.pageNo-1)).order_by(tbl.c.status.asc(),tbl.c.post_id.desc())
 
-        conn = db.connect()
+        conn = dbe.connect()
+        # Hook regexp function to sqlite3 if the current mode is regexp
+        if self.isRegexp:
+            def regexp(expr, item):
+                reg = re.compile(expr)
+                return reg.search(item) is not None
+            conn.connection.create_function('REGEXP', 2, regexp)
         rslt = conn.execute(stmt)
         while True:
             row = rslt.fetchone()
@@ -465,15 +500,53 @@ class UBCmdFind(UBCommand):
 
         vim.command("let b:page_no=%s" % self.pageNo)
         vim.command("let b:page_size=%s" % self.pageSize)
+        vim.command("let b:is_regexp=%s" % self.isRegexp)
         vim.command("let b:ub_keywords=[%s]" % ','.join(["'%s'" % kw for kw in self.keywords]))
-        vim.command("map <buffer> "+ub_get_option('ub_hotkey_pagedown')+" :py ub_find(%d,%s)<cr>" % (self.pageNo+1, ','.join(["'%s'" % kw for kw in self.keywords])))
-        vim.command("map <buffer> "+ub_get_option('ub_hotkey_pageup')+" :py ub_find(%d,%s)<cr>" % (self.pageNo-1, ','.join(["'%s'" % kw for kw in self.keywords])))
+        vim.command("map <buffer> "+ub_get_option('ub_hotkey_pagedown')+" :py ub_search(%d,%d,%s)<cr>" % (self.isRegexp, self.pageNo+1, ','.join(["'%s'" % kw for kw in self.keywords])))
+        vim.command("map <buffer> "+ub_get_option('ub_hotkey_pageup')+" :py ub_search(%d,%d,%s)<cr>" % (self.isRegexp, self.pageNo-1, ','.join(["'%s'" % kw for kw in self.keywords])))
         vim.command('call UBClearUndo()')
         vim.command('setl nomodified')
         vim.command("setl nomodifiable")
         vim.current.window.cursor = (2, 0)
         vim.command("let @/='\\(%s\\)'" % '\\|'.join(self.keywords))
         vim.command('setl hls')
+
+class UBCmdReplace(UBCommand):
+    ''' Context replace
+    '''
+    def __init__(self, isRegexp, needle, replacement):
+        UBCommand.__init__(self)
+        self.isRegexp = isRegexp
+        self.needle = needle
+        self.replacement = replacement
+        self.count = 0
+
+    def _preExec(self):
+        UBCmdReplace.doDefault()
+
+    def _exec(self):
+        conn = dbe.connect()
+        # Hook regexp function to sqlite3 if the current mode is regexp
+        if self.isRegexp:
+            conn.connection.create_function('REGEXP', 2, regexp_search)
+            conn.connection.create_function('regex_replace', 3, regex_replace)
+            sql_replace = "update post set title=regex_replace(title,:needle,:replacement),content=regex_replace(content,:needle,:replacement)"
+            sql_count = "select count(*) from post where title regexp :needle or content regexp :needle"
+            rslt = conn.execute(sql_count, {'needle':self.needle.decode(self.enc)})
+            self.count = rslt.fetchone()[0]
+        else:
+            sql_replace = "update post set title=replace(title,:needle,:replacement),content=replace(content,:needle,:replacement)"
+            needle = '%%%s%%' % self.needle.decode(self.enc)
+            self.count = self.sess.query(Post).filter(or_(Post.title.like(needle),Post.content.like(needle))).count()
+        conn.execute(sql_replace, {'needle':self.needle.decode(self.enc), 'replacement':self.replacement.decode(self.enc)})
+        conn.close()
+
+    def _postExec(self):
+        UBCmdReplace.doDefault()
+        evt = UBReplaceCompleteEvent(self.count)
+        UBEventQueue.fireEvent(evt)
+        UBEventQueue.processEvents()
+        ub_echo(_('%d items substituted !') % self.count)
 
 class UBCmdSave(UBCommand):
     ''' Save items
@@ -978,7 +1051,8 @@ class UBCmdRefresh(UBCommand):
         if self.viewName == 'search_result_list':
             kws = ub_get_bufvar('ub_keywords')
             pno = ub_get_bufvar('page_no')
-            ub_find(pno, *kws)
+            isregexp = ub_get_bufvar('is_regexp')
+            ub_search(isregexp, pno, *kws)
         elif ub_is_view_of_type('list'):
             psize = ub_get_bufvar('page_size')
             pno = ub_get_bufvar('page_no')
