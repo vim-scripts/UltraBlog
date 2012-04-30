@@ -20,34 +20,35 @@ http://0x3f.org/?p=2063
 
 *Features:*
 
-  * Multiple syntax support: Markdown, HTML, reStructuredText, LaTeX, Textile.
-  * Editor mode and client mode.
-  * Data is stored in a local SQLite database in client mode.
-  * Full-text search with keywords highlighted.
-  * Full-text search by using regular expressions.
-  * Full-text substitutions.
-  * Full-text substitutions using regular expressions.
-  * Templates for previewing posts.
-  * Event-driven system.
-  * I18N.
+    * Multiple syntax support: Markdown, HTML, reStructuredText, LaTeX, Textile.
+    * Editor mode and client mode.
+    * Data is stored in a local SQLite database in client mode.
+    * Full-text search with keywords highlighted.
+    * Full-text search by using regular expressions.
+    * Full-text substitutions.
+    * Full-text substitutions using regular expressions.
+    * Templates for previewing posts.
+    * Built-in web browser, much faster to preview items.
+    * Event-driven system.
+    * I18N.
 
 *Commands:*
 
-  * :UBNew [item [syntax/template_name]]
-  * :UBPreview [status/template name]
-  * :UBSave
-  * :UBSend [status]
-  * :UBList [item [scope [page_size [page_no]]]]
-  * :UBOpen {item} {post_id/template_name} [scope]
-  * :UBDel {item} {post_id/template_name} [scope]
-  * :UBUpload {file_path}
-  * :UBThis [item [to_syntax [from_syntax]]]
-  * :UBConv {to_syntax} [from_syntax]
-  * :UBRefresh
-  * :UBFind keyword1 [keyword2 ...]
-  * :UBRegexSearch regexp1 [regexp2 ...]
-  * :UBReplace needle replacement
-  * :UBRegexReplace regexp replacement
-  * :UBEnableDebug
-  * :UBDisableDebug
-  * :UBToggleDebug
+    * :UBNew [item [syntax/template_name]]
+    * :UBPreview [status/template name]
+    * :UBSave
+    * :UBSend [status]
+    * :UBList [item [scope [page_size [page_no]]]]
+    * :UBOpen {item} {post_id/template_name} [scope]
+    * :UBDel {item} {post_id/template_name} [scope]
+    * :UBUpload {file_path}
+    * :UBThis [item [to_syntax [from_syntax]]]
+    * :UBConv {to_syntax} [from_syntax]
+    * :UBRefresh
+    * :UBFind keyword1 [keyword2 ...]
+    * :UBRegexSearch regexp1 [regexp2 ...]
+    * :UBReplace needle replacement
+    * :UBRegexReplace regexp replacement
+    * :UBEnableDebug
+    * :UBDisableDebug
+    * :UBToggleDebug
