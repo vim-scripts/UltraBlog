@@ -4,10 +4,10 @@ import gtk
 import webkit
 
 class UBPreviewer(gtk.Window):
-    def __init__(self):
+    def __init__(self, width=900, height=600):
         super(UBPreviewer, self).__init__()
         self.connect("destroy", self.onDestroy)
-        self.set_size_request(800, 600)
+        self.set_size_request(width, height)
         self.set_position(gtk.WIN_POS_CENTER)
         self.set_title(_('Previewer for UltraBlog.vim'))
 
@@ -49,8 +49,8 @@ class UBPreviewer(gtk.Window):
         '''
         gtk.main_quit()
 
-def open(url):
-    app = UBPreviewer()
+def open(url, width=900, height=600):
+    app = UBPreviewer(width, height)
     app.open(url)
     gtk.main()
 

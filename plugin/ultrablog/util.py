@@ -249,6 +249,10 @@ def ub_get_option(opt, deal=False):
         val = __get_positive(val, 30)
     elif opt == 'ub_socket_timeout':
         val = __get_positive(val, 10)
+    elif opt == 'ub_viewer_width':
+        val = __get_positive(val, 900)
+    elif opt == 'ub_viewer_height':
+        val = __get_positive(val, 600)
     elif opt == 'ub_debug':
         val = __get_boolean(val, False)
     elif opt == 'ub_use_ubviewer':
@@ -354,7 +358,7 @@ def ub_get_blog_settings():
     '''Get the blog settings from vimrc and raise exception if none found
     '''
     class UBConfiguration:
-        homepage = 'http://0x3f.org/?p=1894'
+        homepage = 'http://0x3f.org/blog/ultrablog-as-an-ultimate-vim-blogging-plugin/'
 
         def __init__(self, rawSettings):
             self.loginName = rawSettings['login_name'].strip()
